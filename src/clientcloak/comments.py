@@ -27,6 +27,7 @@ When modifying, the input ZIP is read in full and a new ZIP is written to
 the output path, so input == output is safe.
 """
 
+import re
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -276,43 +277,26 @@ def _strip_comment_references(xml_data: bytes) -> bytes:
     """
     Remove all comment range markers and references from ``word/document.xml``.
 
-    Recursively walks every element and removes children whose tag is one of:
-        - ``w:commentRangeStart``
-        - ``w:commentRangeEnd``
-        - ``w:commentReference``
+    Uses regex removal on the raw XML to avoid re-serializing through
+    ElementTree, which would mangle namespace prefixes (e.g. ``mc:`` becomes
+    ``ns0:``) and cause Word to report "unreadable content".
+
+    Targets self-closing elements:
+        - ``<w:commentRangeStart ... />``
+        - ``<w:commentRangeEnd ... />``
+        - ``<w:commentReference ... />``
 
     Args:
         xml_data: Raw bytes of ``word/document.xml``.
 
     Returns:
-        Cleaned XML bytes.
+        Cleaned XML bytes with comment markers removed.
     """
-    removal_tags = {_TAG_COMMENT_RANGE_START, _TAG_COMMENT_RANGE_END, _TAG_COMMENT_REFERENCE}
-
-    root = ET.fromstring(xml_data)
-    _recursive_remove(root, removal_tags)
-
-    return ET.tostring(root, encoding="UTF-8", xml_declaration=True)
-
-
-def _recursive_remove(element: ET.Element, tags_to_remove: set[str]) -> None:
-    """
-    Recursively remove all descendant elements whose tag is in *tags_to_remove*.
-
-    Removal is done in a safe two-pass manner: first collect, then remove,
-    to avoid mutating the tree while iterating.
-
-    Args:
-        element: The current element to process.
-        tags_to_remove: Set of fully-qualified tag strings to remove.
-    """
-    to_remove = [child for child in element if child.tag in tags_to_remove]
-    for child in to_remove:
-        element.remove(child)
-
-    # Recurse into remaining children
-    for child in element:
-        _recursive_remove(child, tags_to_remove)
+    xml_str = xml_data.decode("utf-8")
+    xml_str = re.sub(r"<w:commentRangeStart\b[^>]*?/>", "", xml_str)
+    xml_str = re.sub(r"<w:commentRangeEnd\b[^>]*?/>", "", xml_str)
+    xml_str = re.sub(r"<w:commentReference\b[^>]*?/>", "", xml_str)
+    return xml_str.encode("utf-8")
 
 
 # ---------------------------------------------------------------------------
