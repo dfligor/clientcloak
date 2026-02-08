@@ -338,15 +338,15 @@ async def cloak(
 @router.get("/download/{session_id}/{file_type}")
 async def download_file(session_id: str, file_type: str):
     """
-    Download a cloaked document or mapping file from a session.
+    Download a file from a session.
 
-    file_type must be "cloaked" or "mapping".
+    file_type must be "cloaked", "mapping", or "original".
     """
     # --- Validate file_type ---
-    if file_type not in ("cloaked", "mapping"):
+    if file_type not in ("cloaked", "mapping", "original"):
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid file_type: '{file_type}'. Must be 'cloaked' or 'mapping'.",
+            detail=f"Invalid file_type: '{file_type}'. Must be 'cloaked', 'mapping', or 'original'.",
         )
 
     # --- Validate session ---
@@ -356,7 +356,11 @@ async def download_file(session_id: str, file_type: str):
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
     # --- Determine file path ---
-    if file_type == "cloaked":
+    if file_type == "original":
+        file_path = session_dir / "original.docx"
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        download_name = "original.docx"
+    elif file_type == "cloaked":
         file_path = session_dir / "cloaked.docx"
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         # Try to get original filename for download name, then sanitize it

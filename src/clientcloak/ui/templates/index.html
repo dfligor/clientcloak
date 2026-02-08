@@ -161,21 +161,44 @@
             </div>
             <hr class="my-5 border-gray-200">
 
-            <!-- Preamble Preview (collapsible, collapsed by default) -->
-            <div class="mb-5" x-show="preambleText">
+            <!-- Document Preview (collapsible) -->
+            <div class="mb-5">
                 <button class="expand-trigger flex items-center gap-2 text-xs font-medium text-gray-500 hover:text-navy transition-colors"
-                        @click="showPreamble = !showPreamble"
-                        :aria-expanded="showPreamble"
+                        @click="toggleDocPreview()"
+                        :aria-expanded="docPreviewOpen"
                         type="button">
-                    <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="showPreamble ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
-                    Preview document text
+                    <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="docPreviewOpen ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                        <polyline points="10 9 9 9 8 9"/>
+                    </svg>
+                    View Document
                 </button>
-                <div x-show="showPreamble"
+                <div x-show="docPreviewOpen"
                      x-transition:enter="transition ease-out duration-200"
                      x-transition:enter-start="opacity-0 -translate-y-2"
                      x-transition:enter-end="opacity-100 translate-y-0"
-                     class="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-4 max-h-48 overflow-y-auto">
-                    <pre class="text-xs text-gray-600 font-mono whitespace-pre-wrap" x-text="preambleText"></pre>
+                     class="mt-2 border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
+                    <!-- Loading -->
+                    <div x-show="docPreviewLoading" class="flex flex-col items-center justify-center py-12">
+                        <div class="w-8 h-8 border-2 border-teal border-t-transparent rounded-full animate-spin mb-3"></div>
+                        <p class="text-sm text-gray-500">Rendering document...</p>
+                    </div>
+                    <!-- Error -->
+                    <div x-show="docPreviewError" class="flex flex-col items-center justify-center py-12">
+                        <svg class="w-8 h-8 text-gray-300 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                        <p class="text-sm text-gray-500" x-text="docPreviewError"></p>
+                    </div>
+                    <!-- iframe for style isolation -->
+                    <iframe x-ref="docPreviewFrame"
+                            x-show="!docPreviewLoading && !docPreviewError && docPreviewRendered"
+                            class="w-full border-0 bg-white"
+                            style="height: 600px;"
+                            sandbox="allow-same-origin"
+                            title="Document preview"></iframe>
                 </div>
             </div>
 
@@ -818,9 +841,13 @@ function clientCloak() {
         // ---- Replacements (unified) ----
         replacements: [],         // [{text, label, type, count, checked}]
         customReplacements: [],   // [{text: '', label: ''}]
-        preambleText: null,
-        showPreamble: false,
         commentMode: 'sanitize',
+
+        // ---- Document Preview ----
+        docPreviewOpen: false,
+        docPreviewLoading: false,
+        docPreviewError: null,
+        docPreviewRendered: false,
 
         // ---- Processing ----
         progressStage: 0,    // 0-4
@@ -885,7 +912,6 @@ function clientCloak() {
                 this.securityFindings = data.security_findings || [];
                 this.metadata = data.metadata || {};
                 this.comments = data.comments || {};
-                this.preambleText = data.preamble_text || null;
 
                 // Build unified replacements list
                 this.replacements = [];
@@ -997,6 +1023,76 @@ function clientCloak() {
 
 
         // ==========================
+        // Document Preview
+        // ==========================
+
+        async toggleDocPreview() {
+            this.docPreviewOpen = !this.docPreviewOpen;
+            if (!this.docPreviewOpen || this.docPreviewRendered) return;
+
+            this.docPreviewLoading = true;
+            this.docPreviewError = null;
+
+            try {
+                const res = await fetch(`/api/download/${this.sessionId}/original`);
+                if (!res.ok) throw new Error('Failed to fetch document');
+                const arrayBuffer = await res.arrayBuffer();
+
+                // Render into a temporary container, then move into iframe
+                const tempContainer = document.createElement('div');
+                await docx.renderAsync(arrayBuffer, tempContainer, null, {
+                    className: 'docx',
+                    inWrapper: true,
+                    ignoreWidth: false,
+                    ignoreHeight: false,
+                    ignoreFonts: false,
+                    breakPages: true,
+                    ignoreLastRenderedPageBreak: true,
+                    experimental: false,
+                    renderHeaders: true,
+                    renderFooters: true,
+                    renderFootnotes: true,
+                    renderEndnotes: true,
+                });
+
+                // Collect any <style> tags docx-preview injected into <head>
+                const docxStyles = Array.from(document.querySelectorAll('head style'))
+                    .filter(s => s.textContent.includes('.docx'))
+                    .map(s => s.outerHTML)
+                    .join('\n');
+
+                // Build iframe content with isolated styles
+                const iframe = this.$refs.docPreviewFrame;
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                iframeDoc.open();
+                iframeDoc.write(`<!DOCTYPE html>
+<html><head>
+<style>
+  body { margin: 0; background: #f3f4f6; display: flex; flex-direction: column; align-items: center; padding: 1.5rem; }
+  section.docx { width: 100%; max-width: 850px; }
+  section.docx article { background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.12); border: 1px solid #e5e7eb; border-radius: 4px; margin-bottom: 1.5rem; }
+</style>
+${docxStyles}
+</head><body>${tempContainer.innerHTML}</body></html>`);
+                iframeDoc.close();
+
+                // Auto-size iframe height to content
+                this.$nextTick(() => {
+                    const contentHeight = iframeDoc.documentElement.scrollHeight;
+                    iframe.style.height = Math.min(contentHeight, 700) + 'px';
+                });
+
+                this.docPreviewRendered = true;
+            } catch (err) {
+                console.error('docx-preview error:', err);
+                this.docPreviewError = 'Could not render document preview.';
+            } finally {
+                this.docPreviewLoading = false;
+            }
+        },
+
+
+        // ==========================
         // Cloak: Execute
         // ==========================
 
@@ -1094,9 +1190,11 @@ function clientCloak() {
             this.comments = {};
             this.replacements = [];
             this.customReplacements = [];
-            this.preambleText = null;
-            this.showPreamble = false;
             this.commentMode = 'sanitize';
+            this.docPreviewOpen = false;
+            this.docPreviewLoading = false;
+            this.docPreviewError = null;
+            this.docPreviewRendered = false;
             this.progressStage = 0;
             this.result = {};
             this.showPromptTips = false;
