@@ -140,7 +140,7 @@ async def upload_document(file: UploadFile = File(...)):
 
 
 @router.post("/detect-entities")
-async def detect_entities(
+async def detect_entities_route(
     session_id: str = Form(...),
     party_a: str = Form(""),
     party_b: str = Form(""),
