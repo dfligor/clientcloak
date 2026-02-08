@@ -12,6 +12,7 @@ the correct order.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from .comments import process_comments
@@ -27,6 +28,76 @@ from .models import CloakConfig, CloakResult, DetectedEntity, MappingFile
 from .security import scan_document
 
 logger = logging.getLogger(__name__)
+
+
+def _build_cloak_replacements(config: CloakConfig) -> dict[str, str]:
+    """
+    Build the original -> placeholder replacement dictionary from a config.
+
+    This is the same logic used inside :func:`cloak_document` (step 3),
+    extracted so callers can access the replacement dict independently
+    (e.g. for filename sanitization).
+    """
+    mappings: dict[str, str] = {
+        f"[{config.party_a_label}]": config.party_a_name,
+        f"[{config.party_b_label}]": config.party_b_name,
+    }
+    for alias in config.party_a_aliases:
+        mappings[f"[{alias.label}]"] = alias.name
+    for alias in config.party_b_aliases:
+        mappings[f"[{alias.label}]"] = alias.name
+    mappings.update(config.additional_replacements)
+
+    return {original: placeholder for placeholder, original in mappings.items()}
+
+
+def sanitize_filename(filename: str, cloak_replacements: dict[str, str]) -> str:
+    """
+    Apply cloak replacements to a filename, case-insensitively.
+
+    Replaces occurrences of original party names found in *filename* with
+    their bracketed placeholder labels, using the same ``original -> placeholder``
+    dictionary used for document content.  Replacements are applied
+    longest-original-first so that "Acme Corporation" is matched before "Acme".
+
+    Spaces in original names are treated flexibly: they also match underscores,
+    hyphens, and dots that are commonly used as word separators in filenames.
+
+    Args:
+        filename: The original filename (stem + extension, or just the stem).
+        cloak_replacements: Mapping of ``original_name -> "[Label]"`` as built
+            during the cloaking pipeline.
+
+    Returns:
+        The filename with all recognised party names replaced by their labels.
+    """
+    # Sort by length of original (descending) so longer names match first,
+    # preventing partial replacements (e.g. "Acme Corp" before "Acme").
+    for original, placeholder in sorted(
+        cloak_replacements.items(), key=lambda kv: len(kv[0]), reverse=True
+    ):
+        # Build a pattern where each literal space in the original name also
+        # matches common filename separators: underscore, hyphen, dot.
+        parts = re.escape(original).split(r"\ ")  # escaped spaces
+        flexible_pattern = r"[\s_\-.]".join(parts)
+        pattern = re.compile(flexible_pattern, re.IGNORECASE)
+        filename = pattern.sub(placeholder, filename)
+    return filename
+
+
+def sanitize_filename_for_config(filename: str, config: CloakConfig) -> str:
+    """
+    Convenience wrapper: sanitize a filename using replacements derived from a
+    :class:`CloakConfig`.
+
+    Args:
+        filename: The original filename (or stem) to sanitize.
+        config: The cloaking configuration that defines party names and labels.
+
+    Returns:
+        The filename with party names replaced by their bracketed labels.
+    """
+    return sanitize_filename(filename, _build_cloak_replacements(config))
 
 
 def cloak_document(
@@ -100,6 +171,13 @@ def cloak_document(
         original: placeholder for placeholder, original in mappings.items()
     }
 
+    # --- 3b. Sanitize the output filename ---
+    # Party names may appear in the filename (e.g. "Acme_BigCo_NDA.docx").
+    # Replace them with bracketed labels so the filename does not leak
+    # party identities.
+    sanitized_stem = sanitize_filename(output_path.stem, cloak_replacements)
+    output_path = output_path.with_name(sanitized_stem + output_path.suffix)
+
     # --- 4. Apply replacements ---
     replacement_count = replace_text_in_document(doc, cloak_replacements)
     logger.info("Applied %d text replacement(s).", replacement_count)
@@ -148,6 +226,7 @@ def cloak_document(
         security_findings=findings,
         metadata_report=metadata_report,
         replacements_applied=replacement_count,
+        output_path=str(output_path),
     )
 
 

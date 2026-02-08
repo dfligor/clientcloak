@@ -12,7 +12,7 @@ import structlog
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
-from ...cloaker import cloak_document
+from ...cloaker import cloak_document, sanitize_filename
 from ...comments import inspect_comments
 from ...docx_handler import load_document
 from ...metadata import inspect_metadata
@@ -182,6 +182,10 @@ async def cloak(
     output_path = session_dir / "cloaked.docx"
     mapping_path = session_dir / "mapping.json"
 
+    # --- Build cloak replacements for filename sanitization ---
+    from ...cloaker import _build_cloak_replacements
+    cloak_replacements = _build_cloak_replacements(config)
+
     # --- Run cloaking ---
     try:
         result = cloak_document(
@@ -200,6 +204,13 @@ async def cloak(
     except Exception as exc:
         logger.error("Cloaking failed", session_id=session_id, error=str(exc))
         raise HTTPException(status_code=500, detail=f"Cloaking failed: {exc}") from exc
+
+    # --- Save cloak replacements for download filename sanitization ---
+    try:
+        replacements_file = session_dir / ".cloak_replacements.json"
+        replacements_file.write_text(json.dumps(cloak_replacements), encoding="utf-8")
+    except Exception:
+        pass  # non-critical
 
     # --- Build mapping preview (first 10 entries) ---
     mapping_preview = dict(list(result.mapping.mappings.items())[:10])
@@ -236,12 +247,20 @@ async def download_file(session_id: str, file_type: str):
     if file_type == "cloaked":
         file_path = session_dir / "cloaked.docx"
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        # Try to get original filename for download name
+        # Try to get original filename for download name, then sanitize it
+        # to remove party names that would otherwise leak in the filename.
         try:
             name_file = session_dir / ".original_filename"
             if name_file.is_file():
                 original_name = name_file.read_text(encoding="utf-8").strip()
                 stem = original_name.rsplit(".", 1)[0]
+                # Apply cloak replacements to the filename stem
+                replacements_file = session_dir / ".cloak_replacements.json"
+                if replacements_file.is_file():
+                    cloak_replacements = json.loads(
+                        replacements_file.read_text(encoding="utf-8")
+                    )
+                    stem = sanitize_filename(stem, cloak_replacements)
                 download_name = f"{stem}_cloaked.docx"
             else:
                 download_name = "cloaked.docx"

@@ -180,30 +180,12 @@
                 </div>
                 <div>
                     <label for="labelA" class="block text-xs font-medium text-gray-500 mb-1">Replace with</label>
-                    <template x-if="!labelACustom">
-                        <select id="labelA"
-                                x-model="labelA"
-                                @change="if(labelA === '__custom__') { labelA = ''; labelACustom = true; $nextTick(() => $refs.labelACustom.focus()); }"
-                                class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition bg-white">
-                            <option value="Customer">Customer</option>
-                            <option value="Vendor">Vendor</option>
-                            <option value="Licensor">Licensor</option>
-                            <option value="Licensee">Licensee</option>
-                            <option value="Buyer">Buyer</option>
-                            <option value="Seller">Seller</option>
-                            <option value="Provider">Provider</option>
-                            <option value="Client">Client</option>
-                            <option value="__custom__">Custom...</option>
-                        </select>
-                    </template>
-                    <template x-if="labelACustom">
-                        <input x-ref="labelACustom"
-                               type="text"
-                               x-model="labelA"
-                               @blur="if(!labelA) { labelA = 'Customer'; labelACustom = false; }"
-                               placeholder="Custom label"
-                               class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition">
-                    </template>
+                    <input id="labelA"
+                           type="text"
+                           x-model="labelA"
+                           placeholder="e.g. Customer"
+                           class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
+                           autocomplete="off">
                 </div>
             </div>
 
@@ -261,30 +243,12 @@
                 </div>
                 <div>
                     <label for="labelB" class="block text-xs font-medium text-gray-500 mb-1">Replace with</label>
-                    <template x-if="!labelBCustom">
-                        <select id="labelB"
-                                x-model="labelB"
-                                @change="if(labelB === '__custom__') { labelB = ''; labelBCustom = true; $nextTick(() => $refs.labelBCustom.focus()); }"
-                                class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition bg-white">
-                            <option value="Customer">Customer</option>
-                            <option value="Vendor">Vendor</option>
-                            <option value="Licensor">Licensor</option>
-                            <option value="Licensee">Licensee</option>
-                            <option value="Buyer">Buyer</option>
-                            <option value="Seller">Seller</option>
-                            <option value="Provider">Provider</option>
-                            <option value="Client">Client</option>
-                            <option value="__custom__">Custom...</option>
-                        </select>
-                    </template>
-                    <template x-if="labelBCustom">
-                        <input x-ref="labelBCustom"
-                               type="text"
-                               x-model="labelB"
-                               @blur="if(!labelB) { labelB = 'Vendor'; labelBCustom = false; }"
-                               placeholder="Custom label"
-                               class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition">
-                    </template>
+                    <input id="labelB"
+                           type="text"
+                           x-model="labelB"
+                           placeholder="e.g. Vendor"
+                           class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
+                           autocomplete="off">
                 </div>
             </div>
 
@@ -889,8 +853,7 @@ function clientCloak() {
         partyB: '',
         labelA: 'Customer',
         labelB: 'Vendor',
-        labelACustom: false,
-        labelBCustom: false,
+        // labelACustom / labelBCustom removed: labels are now plain text inputs
         aliasesA: [],
         aliasesB: [],
         commentMode: 'strip',
@@ -989,8 +952,6 @@ function clientCloak() {
         applyQuickPick(a, b) {
             this.labelA = a;
             this.labelB = b;
-            this.labelACustom = false;
-            this.labelBCustom = false;
         },
 
         addAliasA() { this.aliasesA.push({ name: '', label: '' }); },

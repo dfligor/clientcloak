@@ -134,3 +134,4 @@ class CloakResult(BaseModel):
     metadata_report: MetadataReport | None = None
     entities_detected: int = 0
     replacements_applied: int = 0
+    output_path: str | None = None  # Actual output path (may differ from requested if filename was sanitized)

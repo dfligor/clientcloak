@@ -1,12 +1,18 @@
 # ClientCloak
 
-Bidirectional document sanitization for safe AI contract review.
+Bidirectional document sanitization for safe contract review with cloud AI tools or in public places like coworking spaces, airplanes, and coffee shops.
 
 ## The Problem
 
-You want to use AI tools (Claude, ChatGPT, Gemini, etc.) to review contracts, but you're ethically obligated not to send documents with client names, deal terms, and personal data to the cloud.
+Attorneys want to use AI tools (Claude, ChatGPT, Gemini, etc.) from foundational LLM cloud providers for assistance with client work. 
 
-California COPRAC guidance (Nov 2023) and ABA Formal Opinion 512 require attorneys to anonymize client information before using generative AI tools.
+Sending documents with client names, deal terms, and personal data to the cloud without enterprise grade security commitments may create risks that an attorney could violate ethical obligations to preserve client confidentiality or otherwise cause reputational harm. 
+
+Attorneys and clients may not be comfortable with confidential information being sent via the cloud to those cloud providers in light of pending litigation that might require litigation holds and discovery.
+
+Even if you or your law firm have access to a include no training on user input, zero data retention, clear confidentiality obligations, along with a data processing addendum.
+
+California COPRAC guidance (Nov 2023) and ABA Formal Opinion 512 state that attorneys should anonymize client information before using generative AI tools.
 
 ## The Solution
 

@@ -18,6 +18,7 @@ from clientcloak.docx_handler import (
     DocumentLoadError,
     PasswordProtectedError,
     UnsupportedFormatError,
+    _is_bracketed_label,
     _transfer_case,
     extract_all_text,
     load_document,
@@ -237,9 +238,7 @@ class TestReplaceTextInDocument:
     def test_longest_match_first(self, tmp_path):
         """Ensure 'Acme Corporation' is matched before 'Acme'.
 
-        With default match_case=True, case-transfer is applied:
-        'Acme Corporation' (title case) -> '[Party_A]' (title-cased)
-        'Acme' (title case) -> '[Short]' (title-cased)
+        Bracketed labels are preserved verbatim (no case transfer).
         """
         path = make_simple_docx(
             tmp_path / "longest.docx",
@@ -251,10 +250,9 @@ class TestReplaceTextInDocument:
             {"Acme Corporation": "[PARTY_A]", "Acme": "[SHORT]"},
         )
         text = doc.paragraphs[0].text
-        # Case transfer: title-case "Acme Corporation" -> "[Party_A]"
-        assert "[Party_A]" in text
-        # Case transfer: title-case "Acme" -> "[Short]"
-        assert "[Short]" in text
+        # Bracketed labels are used verbatim — no case transfer
+        assert "[PARTY_A]" in text
+        assert "[SHORT]" in text
         assert count == 2
 
     def test_replacement_in_header_footer(self, tmp_path):
@@ -322,8 +320,7 @@ class TestCrossRunReplacement:
     def test_text_split_across_two_runs(self, tmp_path):
         """When Word splits 'Acme Corporation' across two runs, replacement should still work.
 
-        With match_case=True (default), case transfer applies: 'Acme Corporation'
-        is title case, so '[VENDOR]' becomes '[Vendor]'.
+        Bracketed labels are preserved verbatim (no case transfer).
         """
         path = tmp_path / "split_runs.docx"
         doc = Document()
@@ -337,8 +334,8 @@ class TestCrossRunReplacement:
         count = replace_text_in_document(doc, {"Acme Corporation": "[VENDOR]"})
         assert count == 1
         full = "".join(r.text for r in doc.paragraphs[0].runs)
-        # Case transfer: title case "Acme Corporation" -> "[Vendor]"
-        assert "[Vendor]" in full
+        # Bracketed label is used verbatim — no case transfer
+        assert "[VENDOR]" in full
         assert "Acme Corporation" not in full
 
     def test_text_split_across_three_runs(self, tmp_path):
@@ -355,8 +352,8 @@ class TestCrossRunReplacement:
         count = replace_text_in_document(doc, {"Acme Corporation": "[VENDOR]"})
         assert count == 1
         full = "".join(r.text for r in doc.paragraphs[0].runs)
-        # Case transfer applies
-        assert "[Vendor]" in full
+        # Bracketed label is used verbatim
+        assert "[VENDOR]" in full
 
     def test_cross_run_with_match_case_false(self, tmp_path):
         """With match_case=False, replacement text is used verbatim."""
@@ -376,3 +373,86 @@ class TestCrossRunReplacement:
         assert count == 1
         full = "".join(r.text for r in doc.paragraphs[0].runs)
         assert "BigCo LLC" in full
+
+
+# ===================================================================
+# Bracketed label preservation
+# ===================================================================
+
+class TestBracketedLabelPreservation:
+    """Bracketed labels like [AltCustomerName] must be used verbatim."""
+
+    def test_is_bracketed_label_true(self):
+        assert _is_bracketed_label("[AltCustomerName]") is True
+        assert _is_bracketed_label("[X]") is True
+
+    def test_is_bracketed_label_false(self):
+        assert _is_bracketed_label("Vendor") is False
+        assert _is_bracketed_label("[only open") is False
+        assert _is_bracketed_label("only close]") is False
+        assert _is_bracketed_label("") is False
+        assert _is_bracketed_label("[") is False
+
+    def test_bracketed_label_preserved_verbatim_title_case_source(self, tmp_path):
+        """Replacing title-case 'Licensee' with '[AltCustomerName]' must NOT
+        mangle the label's internal capitalisation."""
+        path = make_simple_docx(
+            tmp_path / "bracket_title.docx",
+            ["The Licensee shall comply with all terms."],
+        )
+        doc = load_document(path)
+        count = replace_text_in_document(doc, {"Licensee": "[AltCustomerName]"})
+        assert count == 1
+        text = doc.paragraphs[0].text
+        assert "[AltCustomerName]" in text
+
+    def test_bracketed_label_preserved_verbatim_upper_case_source(self, tmp_path):
+        """Replacing all-caps 'LICENSEE' must still keep the label verbatim."""
+        path = make_simple_docx(
+            tmp_path / "bracket_upper.docx",
+            ["THE LICENSEE SHALL COMPLY WITH ALL TERMS."],
+        )
+        doc = load_document(path)
+        count = replace_text_in_document(doc, {"Licensee": "[AltCustomerName]"})
+        assert count == 1
+        text = doc.paragraphs[0].text
+        assert "[AltCustomerName]" in text
+
+    def test_bracketed_label_preserved_verbatim_lower_case_source(self, tmp_path):
+        """Replacing all-lowercase 'licensee' must still keep the label verbatim."""
+        path = make_simple_docx(
+            tmp_path / "bracket_lower.docx",
+            ["the licensee shall comply with all terms."],
+        )
+        doc = load_document(path)
+        count = replace_text_in_document(doc, {"Licensee": "[AltCustomerName]"})
+        assert count == 1
+        text = doc.paragraphs[0].text
+        assert "[AltCustomerName]" in text
+
+    def test_bracketed_label_preserved_across_runs(self, tmp_path):
+        """Bracketed label stays verbatim even when the match spans two runs."""
+        path = tmp_path / "bracket_runs.docx"
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("The Lic")
+        p.add_run("ensee shall comply.")
+        doc.save(str(path))
+
+        doc = load_document(path)
+        count = replace_text_in_document(doc, {"Licensee": "[AltCustomerName]"})
+        assert count == 1
+        full = "".join(r.text for r in doc.paragraphs[0].runs)
+        assert "[AltCustomerName]" in full
+
+    def test_non_bracketed_replacement_still_gets_case_transfer(self, tmp_path):
+        """Non-bracketed replacements must still have case transfer applied."""
+        path = make_simple_docx(
+            tmp_path / "non_bracket.docx",
+            ["ACME shipped the product."],
+        )
+        doc = load_document(path)
+        count = replace_text_in_document(doc, {"Acme": "Vendor"})
+        assert count == 1
+        text = doc.paragraphs[0].text
+        assert "VENDOR" in text

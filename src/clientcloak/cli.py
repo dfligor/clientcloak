@@ -228,6 +228,10 @@ def _handle_cloak(args: argparse.Namespace) -> int:
 
     result: CloakResult = cloak_document(input_path, output_path, mapping_path, config)
 
+    # The actual output path may differ from the requested one if the
+    # filename was sanitized to remove party names.
+    actual_output = Path(result.output_path) if result.output_path else output_path
+
     # Summary
     _print_header("Cloaking Summary")
     print(f"  Replacements applied: {result.replacements_applied}")
@@ -248,7 +252,7 @@ def _handle_cloak(args: argparse.Namespace) -> int:
 
     # Output paths
     _print_header("Output Files")
-    print(f"  Cloaked document: {output_path.resolve()}")
+    print(f"  Cloaked document: {actual_output.resolve()}")
     print(f"  Mapping file:     {mapping_path.resolve()}")
     print()
 

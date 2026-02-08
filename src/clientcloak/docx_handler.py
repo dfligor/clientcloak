@@ -315,6 +315,16 @@ def _iter_headers_footers(section):
 # Internal: case-preserving replacement
 # ---------------------------------------------------------------------------
 
+def _is_bracketed_label(text: str) -> bool:
+    """Return True if *text* is a bracketed label like ``[AltCustomerName]``.
+
+    Bracketed labels are placeholder tokens that must be preserved verbatim
+    during cloaking — applying case transfer would mangle the internal
+    capitalisation (e.g. ``[AltCustomerName]`` -> ``[Altcustomername]``).
+    """
+    return len(text) >= 2 and text.startswith("[") and text.endswith("]")
+
+
 def _transfer_case(original: str, replacement: str) -> str:
     """
     Transfer the case pattern of *original* onto *replacement*.
@@ -461,7 +471,10 @@ def _replace_preserving_format(
     for match in reversed(matches):
         matched_text = match.group()
         new_text_template = lookup[matched_text.lower()]
-        new_text = _transfer_case(matched_text, new_text_template) if match_case else new_text_template
+        if match_case and not _is_bracketed_label(new_text_template):
+            new_text = _transfer_case(matched_text, new_text_template)
+        else:
+            new_text = new_text_template
 
         start, end = match.start(), match.end()
         match_len = end - start
@@ -585,7 +598,9 @@ def _replace_collapsing_runs(
         count += 1
         matched = m.group()
         template = lookup[matched.lower()]
-        return _transfer_case(matched, template) if match_case else template
+        if match_case and not _is_bracketed_label(template):
+            return _transfer_case(matched, template)
+        return template
 
     new_text = pattern.sub(_replacer, full_text)
 

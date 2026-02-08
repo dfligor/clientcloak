@@ -9,7 +9,7 @@ import pytest
 from pathlib import Path
 from docx import Document
 
-from clientcloak.cloaker import cloak_document
+from clientcloak.cloaker import cloak_document, sanitize_filename, sanitize_filename_for_config, _build_cloak_replacements
 from clientcloak.uncloaker import uncloak_document
 from clientcloak.docx_handler import load_document, extract_all_text
 from clientcloak.models import CloakConfig, CommentMode, PartyAlias
@@ -109,18 +109,14 @@ class TestRoundtrip:
         """
         Case handling through cloak/uncloak cycle:
 
-        Cloaking (match_case=True): case transfer is applied
-          'ACME CORPORATION' -> 'LICENSOR' (all caps transfer)
-          'Acme Corporation' -> 'Licensor' (title case transfer)
-          'acme corporation' -> 'licensor' (all lower transfer)
+        Cloaking (match_case=True): bracketed labels are preserved verbatim
+          'ACME CORPORATION' -> '[Licensor]' (no case transfer for bracketed labels)
+          'Acme Corporation' -> '[Licensor]' (verbatim)
+          'acme corporation' -> '[Licensor]' (verbatim)
 
         Uncloaking (match_case=False): replacement is verbatim from mapping
-          The mapping stores: 'Licensor' -> 'Acme Corporation'
-          So 'LICENSOR', 'Licensor', 'licensor' all get replaced (case-insensitive
-          matching) with 'Acme Corporation' verbatim (match_case=False).
-
-        This means ALL variants become 'Acme Corporation'. This is the expected
-        behavior because uncloaking restores the exact original form from the mapping.
+          The mapping stores: '[Licensor]' -> 'Acme Corporation'
+          So all instances of '[Licensor]' get replaced with 'Acme Corporation'.
         """
         paragraphs = [
             "ACME CORPORATION agrees to the terms.",
@@ -131,13 +127,13 @@ class TestRoundtrip:
             tmp_path, paragraphs, "Acme Corporation", "BigCo LLC"
         )
 
-        # Cloaking phase should show labels
-        assert "LICENSOR" in cloaked[0]
-        assert "Licensor" in cloaked[1]
-        assert "licensor" in cloaked[2]
+        # Cloaking phase: bracketed labels are used verbatim regardless of source case
+        assert "[Licensor]" in cloaked[0]
+        assert "[Licensor]" in cloaked[1]
+        assert "[Licensor]" in cloaked[2]
 
         # Uncloaking with match_case=False restores verbatim from mapping
-        # All case variants of 'Licensor' become 'Acme Corporation'
+        # All instances of '[Licensor]' become 'Acme Corporation'
         for text in uncloaked:
             assert "Acme Corporation" in text
 
@@ -309,3 +305,167 @@ class TestAliasRoundtrip:
         orig_text = load_document(input_path).paragraphs[0].text
         final_text = load_document(uncloaked_path).paragraphs[0].text
         assert orig_text == final_text
+
+
+# ===================================================================
+# Filename sanitization tests
+# ===================================================================
+
+class TestFilenameSanitization:
+    """Verify that party names are replaced in output filenames."""
+
+    def test_sanitize_filename_basic(self):
+        """Party names in the filename stem are replaced by bracketed labels."""
+        replacements = {"Acme": "[Customer]", "BigCo": "[Vendor]"}
+        result = sanitize_filename("Acme_BigCo_NDA", replacements)
+        assert result == "[Customer]_[Vendor]_NDA"
+
+    def test_sanitize_filename_case_insensitive(self):
+        """Replacement is case-insensitive on the filename."""
+        replacements = {"Acme": "[Customer]", "BigCo": "[Vendor]"}
+        result = sanitize_filename("acme_bigco_NDA", replacements)
+        assert result == "[Customer]_[Vendor]_NDA"
+
+    def test_sanitize_filename_mixed_case(self):
+        """Mixed-case party names in the filename are still replaced."""
+        replacements = {"Acme": "[Customer]", "BigCo": "[Vendor]"}
+        result = sanitize_filename("ACME_BIGCO_NDA", replacements)
+        assert result == "[Customer]_[Vendor]_NDA"
+
+    def test_sanitize_filename_no_match(self):
+        """A filename with no party names is returned unchanged."""
+        replacements = {"Acme": "[Customer]", "BigCo": "[Vendor]"}
+        result = sanitize_filename("contract_NDA", replacements)
+        assert result == "contract_NDA"
+
+    def test_sanitize_filename_longest_first(self):
+        """Longer original names are replaced before shorter ones."""
+        replacements = {
+            "Acme Corporation": "[Full Vendor]",
+            "Acme": "[Vendor]",
+        }
+        result = sanitize_filename("Acme_Corporation_contract", replacements)
+        assert result == "[Full Vendor]_contract"
+
+    def test_sanitize_filename_for_config(self):
+        """The config-based convenience wrapper works correctly."""
+        config = CloakConfig(
+            party_a_name="Acme",
+            party_a_label="Customer",
+            party_b_name="BigCo",
+            party_b_label="Vendor",
+        )
+        result = sanitize_filename_for_config("Acme_BigCo_NDA", config)
+        assert result == "[Customer]_[Vendor]_NDA"
+
+    def test_cloak_document_sanitizes_output_filename(self, tmp_path):
+        """
+        End-to-end: cloak_document rewrites the output filename so party
+        names do not leak.  Input 'Acme_BigCo_NDA.docx' with party_a='Acme'
+        and party_b='BigCo' should produce '[Customer]_[Vendor]_NDA_cloaked.docx'.
+        """
+        paragraphs = ["This agreement is between Acme and BigCo."]
+        input_path = make_simple_docx(tmp_path / "Acme_BigCo_NDA.docx", paragraphs)
+
+        # The caller requests this output name (which still contains party names):
+        requested_output = tmp_path / "Acme_BigCo_NDA_cloaked.docx"
+        mapping_path = tmp_path / "mapping.json"
+
+        config = CloakConfig(
+            party_a_name="Acme",
+            party_a_label="Customer",
+            party_b_name="BigCo",
+            party_b_label="Vendor",
+        )
+
+        result = cloak_document(input_path, requested_output, mapping_path, config)
+
+        # The actual output path should have sanitized the filename.
+        actual_output = Path(result.output_path)
+        assert actual_output.name == "[Customer]_[Vendor]_NDA_cloaked.docx"
+        assert actual_output.exists()
+
+        # The original (unsanitized) path should NOT exist.
+        assert not requested_output.exists()
+
+        # The content should also be sanitized.
+        doc = load_document(actual_output)
+        full_text = " ".join(p.text for p in doc.paragraphs)
+        assert "Acme" not in full_text
+        assert "BigCo" not in full_text
+
+    def test_cloak_document_filename_case_insensitive(self, tmp_path):
+        """
+        Output filename sanitization is case-insensitive: 'acme' in the
+        filename matches party_a_name='Acme'.
+        """
+        paragraphs = ["Agreement between Acme and BigCo."]
+        input_path = make_simple_docx(tmp_path / "acme_bigco_nda.docx", paragraphs)
+
+        requested_output = tmp_path / "acme_bigco_nda_cloaked.docx"
+        mapping_path = tmp_path / "mapping.json"
+
+        config = CloakConfig(
+            party_a_name="Acme",
+            party_a_label="Customer",
+            party_b_name="BigCo",
+            party_b_label="Vendor",
+        )
+
+        result = cloak_document(input_path, requested_output, mapping_path, config)
+
+        actual_output = Path(result.output_path)
+        assert "[Customer]" in actual_output.stem
+        assert "[Vendor]" in actual_output.stem
+        assert "acme" not in actual_output.stem.lower() or "[customer]" in actual_output.stem.lower()
+        assert actual_output.exists()
+
+    def test_cloak_document_no_party_names_in_filename(self, tmp_path):
+        """
+        When the output filename does not contain party names, it is
+        returned unchanged.
+        """
+        paragraphs = ["Agreement between Acme and BigCo."]
+        input_path = make_simple_docx(tmp_path / "contract.docx", paragraphs)
+
+        requested_output = tmp_path / "contract_cloaked.docx"
+        mapping_path = tmp_path / "mapping.json"
+
+        config = CloakConfig(
+            party_a_name="Acme",
+            party_a_label="Customer",
+            party_b_name="BigCo",
+            party_b_label="Vendor",
+        )
+
+        result = cloak_document(input_path, requested_output, mapping_path, config)
+
+        actual_output = Path(result.output_path)
+        assert actual_output.name == "contract_cloaked.docx"
+        assert actual_output.exists()
+
+    def test_cloak_document_filename_with_aliases(self, tmp_path):
+        """
+        Party aliases are also replaced in the output filename.
+        """
+        paragraphs = ['Acme Corp. ("Acme") and BigCo agree.']
+        input_path = make_simple_docx(tmp_path / "Acme_BigCo_NDA.docx", paragraphs)
+
+        requested_output = tmp_path / "Acme_BigCo_NDA_cloaked.docx"
+        mapping_path = tmp_path / "mapping.json"
+
+        config = CloakConfig(
+            party_a_name="Acme Corp.",
+            party_a_label="Full Vendor",
+            party_b_name="BigCo",
+            party_b_label="Customer",
+            party_a_aliases=[PartyAlias(name="Acme", label="Vendor")],
+        )
+
+        result = cloak_document(input_path, requested_output, mapping_path, config)
+
+        actual_output = Path(result.output_path)
+        # "Acme" should be replaced (by the alias replacement) and "BigCo" by party_b.
+        assert "Acme" not in actual_output.stem
+        assert "BigCo" not in actual_output.stem
+        assert actual_output.exists()
