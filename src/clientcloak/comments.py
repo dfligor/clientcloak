@@ -255,7 +255,11 @@ def generate_initials(label: str) -> str:
 
 def _strip_all_comments(xml_data: bytes) -> bytes:
     """
-    Remove all ``<w:comment>`` children from the comments root element.
+    Remove all ``<w:comment>`` elements from ``word/comments.xml``.
+
+    Uses regex removal on the raw XML to avoid re-serializing through
+    ElementTree, which would mangle namespace prefixes and cause Word
+    to report "unreadable content".
 
     Preserves the ``<w:comments>`` wrapper so the file remains well-formed.
 
@@ -265,12 +269,9 @@ def _strip_all_comments(xml_data: bytes) -> bytes:
     Returns:
         Cleaned XML bytes.
     """
-    root = ET.fromstring(xml_data)
-
-    for comment in root.findall(_TAG_COMMENT):
-        root.remove(comment)
-
-    return ET.tostring(root, encoding="UTF-8", xml_declaration=True)
+    xml_str = xml_data.decode("utf-8")
+    xml_str = re.sub(r"<w:comment\s[^>]*>[\s\S]*?</w:comment>", "", xml_str)
+    return xml_str.encode("utf-8")
 
 
 def _strip_comment_references(xml_data: bytes) -> bytes:
@@ -311,9 +312,9 @@ def _anonymize_comments(
     """
     Anonymize comment authors and optionally sanitize comment text.
 
-    If an author is not present in *author_mapping*, a default label is
-    generated automatically ("Reviewer A", "Reviewer B", ...) based on
-    the order authors are first encountered.
+    Uses ElementTree for read-only parsing to build the author mapping,
+    then applies changes via regex on the raw XML to preserve namespace
+    prefixes and avoid Word "unreadable content" errors.
 
     Args:
         xml_data: Raw bytes of ``word/comments.xml``.
@@ -327,9 +328,8 @@ def _anonymize_comments(
         - The modified XML bytes.
         - The effective author mapping used (including auto-generated entries).
     """
+    # Step 1: Parse read-only to build the effective author mapping
     root = ET.fromstring(xml_data)
-
-    # Build effective mapping: start with provided, auto-generate for unknowns
     effective_mapping = dict(author_mapping)
     auto_index = len(author_mapping)
 
@@ -341,40 +341,29 @@ def _anonymize_comments(
             effective_mapping[original_author] = label
             auto_index += 1
 
-        # Apply author anonymization
-        if original_author in effective_mapping:
-            new_label = effective_mapping[original_author]
-            comment_el.set(_ATTR_AUTHOR, new_label)
-            comment_el.set(_ATTR_INITIALS, generate_initials(new_label))
+    # Step 2: Apply changes via regex on raw XML to preserve namespaces
+    xml_str = xml_data.decode("utf-8")
 
-        # Apply content replacements (SANITIZE mode)
-        if content_replacements:
-            _replace_comment_text(comment_el, content_replacements)
+    def _replace_attrs(match: re.Match) -> str:
+        tag = match.group(0)
+        author_match = re.search(r'w:author="([^"]*)"', tag)
+        if author_match:
+            original_author = author_match.group(1)
+            if original_author in effective_mapping:
+                new_label = effective_mapping[original_author]
+                new_initials = generate_initials(new_label)
+                tag = re.sub(r'w:author="[^"]*"', f'w:author="{new_label}"', tag)
+                tag = re.sub(r'w:initials="[^"]*"', f'w:initials="{new_initials}"', tag)
+        return tag
 
-    return (
-        ET.tostring(root, encoding="UTF-8", xml_declaration=True),
-        effective_mapping,
-    )
+    xml_str = re.sub(r"<w:comment\s[^>]*?>", _replace_attrs, xml_str)
 
+    # Apply content replacements (SANITIZE mode)
+    if content_replacements:
+        for original, replacement in content_replacements.items():
+            xml_str = xml_str.replace(original, replacement)
 
-def _replace_comment_text(
-    comment_el: ET.Element,
-    replacements: dict[str, str],
-) -> None:
-    """
-    Apply text replacements to all ``<w:t>`` runs inside a comment element.
-
-    Walks all ``<w:p>/<w:r>/<w:t>`` descendants and performs string
-    substitution on their text content.
-
-    Args:
-        comment_el: A ``<w:comment>`` element.
-        replacements: Dict of original_text -> replacement_text to apply.
-    """
-    for t_el in comment_el.iter(_TAG_T):
-        if t_el.text:
-            for original, replacement in replacements.items():
-                t_el.text = t_el.text.replace(original, replacement)
+    return xml_str.encode("utf-8"), effective_mapping
 
 
 # ---------------------------------------------------------------------------
