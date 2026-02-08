@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from .. import __version__
 from ..sessions import cleanup_expired_sessions
 from .routes.cloak import router as cloak_router
 from .routes.uncloak import router as uncloak_router
@@ -43,7 +44,7 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="ClientCloak",
         description="Bidirectional document sanitization for safe AI contract review.",
-        version="0.1.0",
+        version=__version__,
     )
 
     # --- Mount static files ---
@@ -69,7 +70,9 @@ def create_app() -> FastAPI:
     # --- Root route ---
     @application.get("/", response_class=HTMLResponse)
     async def index(request: Request):
-        return templates.TemplateResponse("index.html", {"request": request})
+        return templates.TemplateResponse(
+            "index.html", {"request": request, "version": __version__}
+        )
 
     return application
 
