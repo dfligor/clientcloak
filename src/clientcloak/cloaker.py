@@ -51,6 +51,19 @@ def _build_cloak_replacements(config: CloakConfig) -> dict[str, str]:
     return {original: placeholder for placeholder, original in mappings.items()}
 
 
+def _strip_corporate_suffix(name: str) -> str:
+    """Strip trailing corporate suffixes like Inc., LLC, Corp., etc."""
+    return re.sub(
+        r"\s+(?:Inc\.?|LLC|Corp\.?|Corporation|Ltd\.?|LLP|L\.P\.?|LP|"
+        r"P\.C\.?|PC|Co\.?|Company|Group|Partners|Associates|"
+        r"Enterprises|Holdings|International|Foundation|Technologies|"
+        r"Solutions|Services|Systems)\s*$",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    ).strip()
+
+
 def sanitize_filename(filename: str, cloak_replacements: dict[str, str]) -> str:
     """
     Apply cloak replacements to a filename, case-insensitively.
@@ -60,8 +73,10 @@ def sanitize_filename(filename: str, cloak_replacements: dict[str, str]) -> str:
     dictionary used for document content.  Replacements are applied
     longest-original-first so that "Acme Corporation" is matched before "Acme".
 
-    Spaces in original names are treated flexibly: they also match underscores,
-    hyphens, and dots that are commonly used as word separators in filenames.
+    Spaces in original names are treated flexibly: they match underscores,
+    hyphens, dots, or no separator at all (CamelCase). Corporate suffixes
+    (Inc., LLC, etc.) are also tried as optional so "MakingReign" matches
+    "Making Reign Inc.".
 
     Args:
         filename: The original filename (stem + extension, or just the stem).
@@ -71,15 +86,21 @@ def sanitize_filename(filename: str, cloak_replacements: dict[str, str]) -> str:
     Returns:
         The filename with all recognised party names replaced by their labels.
     """
-    # Sort by length of original (descending) so longer names match first,
-    # preventing partial replacements (e.g. "Acme Corp" before "Acme").
-    for original, placeholder in sorted(
-        cloak_replacements.items(), key=lambda kv: len(kv[0]), reverse=True
-    ):
-        # Build a pattern where each literal space in the original name also
-        # matches common filename separators: underscore, hyphen, dot.
+    # Build all variants: full name + name without corporate suffix.
+    # Longer originals are tried first to prevent partial matches.
+    variants: list[tuple[str, str]] = []
+    for original, placeholder in cloak_replacements.items():
+        variants.append((original, placeholder))
+        stripped = _strip_corporate_suffix(original)
+        if stripped != original and stripped:
+            variants.append((stripped, placeholder))
+    variants.sort(key=lambda kv: len(kv[0]), reverse=True)
+
+    for original, placeholder in variants:
+        # Build a pattern where spaces optionally match filename separators
+        # (underscore, hyphen, dot) or no separator (CamelCase).
         parts = re.escape(original).split(r"\ ")  # escaped spaces
-        flexible_pattern = r"[\s_\-.]".join(parts)
+        flexible_pattern = r"[\s_\-.]?".join(parts)
         pattern = re.compile(flexible_pattern, re.IGNORECASE)
         filename = pattern.sub(placeholder, filename)
     return filename

@@ -21,7 +21,7 @@ ENTITY_PATTERNS: dict[str, str] = {
     "SSN": r"\b\d{3}-\d{2}-\d{4}\b",
     "EIN": r"\b\d{2}-\d{7}\b",
     "AMOUNT": r"\$[\d,]+(?:\.\d{2})?\b",
-    "ADDRESS": r"\d+\s+[A-Za-z\s\.]+(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Way|Lane|Ln)\.?,\s+(?:(?:Suite|Ste|Apt|Unit)\s+\d+,\s+)?[A-Za-z\s]+,\s+[A-Z]{2}\s+\d{5}(?:-\d{4})?",
+    "ADDRESS": r"\d+\s+[A-Za-z\s\.]+(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Way|Lane|Ln)\.?[,\s]+(?:(?:Suite|Ste|Apt|Unit)\s+\d+[,\s]+)?[A-Za-z\s]+,\s+[A-Z]{2}\s+\d{5}(?:-\d{4})?",
     "URL": r"(?:https?://)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:/[^\s,)]*)?(?<![.,)])",
 }
 
@@ -29,6 +29,15 @@ ENTITY_PATTERNS: dict[str, str] = {
 _COMPILED_PATTERNS: dict[str, re.Pattern[str]] = {
     name: re.compile(pattern) for name, pattern in ENTITY_PATTERNS.items()
 }
+
+# Context-based person name patterns (require surrounding context to avoid false positives).
+# Each pattern should have a single capture group for the person's name.
+_PERSON_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"(?:^|\n)\s*Name:\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\s*$", re.MULTILINE),
+    re.compile(r"(?:^|\n)\s*By:\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\s*$", re.MULTILINE),
+    re.compile(r"(?:^|\n)\s*Signature:\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\s*$", re.MULTILINE),
+    re.compile(r"(?:^|\n)\s*Attn:\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)", re.MULTILINE),
+]
 
 
 def generate_placeholder(entity_type: str, index: int) -> str:
@@ -120,6 +129,21 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
                 count=count,
                 suggested_placeholder=generate_placeholder(entity_type, idx),
             ))
+
+    # Context-based person name detection
+    person_counts: Counter = Counter()
+    for pattern in _PERSON_PATTERNS:
+        for match in pattern.finditer(text):
+            person_counts[match.group(1).strip()] += 1
+    for idx, (name, count) in enumerate(person_counts.most_common(), 1):
+        entities.append(DetectedEntity(
+            text=name,
+            entity_type="PERSON",
+            confidence=1.0,
+            count=count,
+            suggested_placeholder=generate_placeholder("PERSON", idx),
+        ))
+
     return entities
 
 
