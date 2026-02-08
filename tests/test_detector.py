@@ -2,7 +2,8 @@
 Tests for clientcloak.detector: regex-based entity detection.
 
 Covers each regex pattern (match and reject), deduplication, party name
-filtering, placeholder generation, and the unified detect_entities() entry point.
+filtering, placeholder generation, the unified detect_entities() entry point,
+and party name detection from legal preambles.
 """
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 from clientcloak.detector import (
     detect_entities,
     detect_entities_regex,
+    detect_party_names,
     deduplicate_entities,
     generate_placeholder,
 )
@@ -74,8 +76,7 @@ class TestPhonePattern:
         entities = detect_entities_regex("Phone: (555) 123-4567")
         phones = [e for e in entities if e.entity_type == "PHONE"]
         assert len(phones) == 1
-        assert "555" in phones[0].text
-        assert "123-4567" in phones[0].text
+        assert phones[0].text == "(555) 123-4567"
 
     def test_matches_dotted_phone(self):
         entities = detect_entities_regex("Phone: 555.123.4567")
@@ -87,10 +88,16 @@ class TestPhonePattern:
         entities = detect_entities_regex("Call 1-555-123-4567 now.")
         phones = [e for e in entities if e.entity_type == "PHONE"]
         assert len(phones) == 1
-        assert "1-555-123-4567" in phones[0].text
+        assert phones[0].text == "1-555-123-4567"
 
     def test_rejects_short_number(self):
         entities = detect_entities_regex("Reference: 555-12")
+        phones = [e for e in entities if e.entity_type == "PHONE"]
+        assert len(phones) == 0
+
+    def test_no_false_positive_from_alphanumeric_prefix(self):
+        """Phone regex should not match when preceded by alphanumeric chars."""
+        entities = detect_entities_regex("ID: ABC1234567890")
         phones = [e for e in entities if e.entity_type == "PHONE"]
         assert len(phones) == 0
 
@@ -147,6 +154,76 @@ class TestAmountPattern:
         entities = detect_entities_regex("The amount is 500 dollars.")
         amounts = [e for e in entities if e.entity_type == "AMOUNT"]
         assert len(amounts) == 0
+
+
+class TestAddressPattern:
+
+    def test_matches_simple_address(self):
+        entities = detect_entities_regex(
+            "Located at 123 Main Street, Springfield, IL 62704"
+        )
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert len(addresses) == 1
+        assert "123 Main Street" in addresses[0].text
+
+    def test_matches_address_with_suite(self):
+        entities = detect_entities_regex(
+            "Office: 456 Oak Ave, Suite 200, Portland, OR 97201"
+        )
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert len(addresses) == 1
+        assert "Suite 200" in addresses[0].text
+
+    def test_matches_address_with_zip_plus_four(self):
+        entities = detect_entities_regex(
+            "Send to 789 Elm Boulevard, Austin, TX 73301-1234"
+        )
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert len(addresses) == 1
+        assert "73301-1234" in addresses[0].text
+
+    def test_rejects_non_address(self):
+        entities = detect_entities_regex("This is not an address at all.")
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert len(addresses) == 0
+
+
+class TestUrlPattern:
+
+    def test_matches_https_url(self):
+        entities = detect_entities_regex("Visit https://www.example.com for details.")
+        urls = [e for e in entities if e.entity_type == "URL"]
+        assert len(urls) == 1
+        assert "example.com" in urls[0].text
+
+    def test_matches_bare_domain(self):
+        entities = detect_entities_regex("Check out softwareexperts.io today.")
+        urls = [e for e in entities if e.entity_type == "URL"]
+        assert len(urls) == 1
+        assert urls[0].text == "softwareexperts.io"
+
+    def test_matches_url_with_path(self):
+        entities = detect_entities_regex("See https://docs.example.com/api/v2/guide for info.")
+        urls = [e for e in entities if e.entity_type == "URL"]
+        assert len(urls) == 1
+        assert "/api/v2/guide" in urls[0].text
+
+    def test_url_dedup_filters_email_domains(self):
+        """URL matches that are substrings of detected emails should be filtered."""
+        entities = detect_entities_regex(
+            "Contact michael@softwareexperts.io for help."
+        )
+        urls = [e for e in entities if e.entity_type == "URL"]
+        emails = [e for e in entities if e.entity_type == "EMAIL"]
+        assert len(emails) == 1
+        # softwareexperts.io should NOT appear as a separate URL
+        url_texts = [u.text for u in urls]
+        assert "softwareexperts.io" not in url_texts
+
+    def test_rejects_non_url(self):
+        entities = detect_entities_regex("This is just text, not a URL.")
+        urls = [e for e in entities if e.entity_type == "URL"]
+        assert len(urls) == 0
 
 
 # ===================================================================
@@ -235,3 +312,69 @@ class TestDetectEntities:
         amount_100 = [e for e in amounts if e.text == "$100"]
         assert len(amount_100) == 1
         assert amount_100[0].count == 2
+
+
+# ===================================================================
+# Party name detection from legal preambles
+# ===================================================================
+
+class TestDetectPartyNames:
+
+    def test_defined_term_with_straight_quotes(self):
+        text = 'This Agreement is entered into by Making Reign Inc. (the "Company") and BigCo LLC (the "Client").'
+        result = detect_party_names(text)
+        assert len(result) == 2
+        assert result[0]["name"] == "Making Reign Inc."
+        assert result[0]["label"] == "Company"
+        assert result[1]["name"] == "BigCo LLC"
+        assert result[1]["label"] == "Client"
+
+    def test_defined_term_with_curly_quotes(self):
+        text = "This Agreement is entered into by Acme Corporation (\u201cLicensor\u201d)."
+        result = detect_party_names(text)
+        assert len(result) == 1
+        assert result[0]["name"] == "Acme Corporation"
+        assert result[0]["label"] == "Licensor"
+
+    def test_defined_term_with_the_prefix(self):
+        text = 'Software Experts LLC (the "Vendor") agrees to provide services.'
+        result = detect_party_names(text)
+        assert len(result) == 1
+        assert result[0]["name"] == "Software Experts LLC"
+        assert result[0]["label"] == "Vendor"
+
+    def test_dear_pattern(self):
+        text = "Dear Acme Corp.,\n\nWe are writing to confirm the terms of our agreement."
+        result = detect_party_names(text)
+        assert len(result) == 1
+        assert result[0]["name"] == "Acme Corp."
+        assert result[0]["label"] == "Addressee"
+
+    def test_no_false_positives_on_plain_text(self):
+        """Plain text without corporate suffixes should not match."""
+        text = "This is a simple paragraph about ordinary things with no companies."
+        result = detect_party_names(text)
+        assert len(result) == 0
+
+    def test_deduplication_across_patterns(self):
+        """Same company found by multiple patterns should appear once."""
+        text = 'Dear Acme Corp.,\nThis Agreement is entered into by Acme Corp. (the "Vendor").'
+        result = detect_party_names(text)
+        names = [r["name"] for r in result]
+        assert names.count("Acme Corp.") == 1
+
+    def test_multiple_corporate_suffixes(self):
+        text = 'Beta LLP (the "Firm") and Gamma Ltd. (the "Supplier")'
+        result = detect_party_names(text)
+        assert len(result) == 2
+        names = {r["name"] for r in result}
+        assert "Beta LLP" in names
+        assert "Gamma Ltd." in names
+
+    def test_only_scans_first_2000_chars(self):
+        """Party names after the first 2000 characters should be ignored."""
+        preamble = 'Acme Inc. (the "Vendor") agrees.'
+        padding = "x" * 2000
+        text = padding + ' Later Corp. (the "Client")'
+        result = detect_party_names(text)
+        assert len(result) == 0  # Acme is at beginning of preamble but padding pushes it out

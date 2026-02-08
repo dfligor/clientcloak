@@ -1,9 +1,10 @@
 """
 Regex-based entity detection with pluggable GLiNER backend.
 
-Detects structured PII (emails, phone numbers, SSNs, EINs, dollar amounts)
-using regex patterns. Designed so GLiNER can be added later as an additional
-backend — both feed the same DetectedEntity model.
+Detects structured PII (emails, phone numbers, SSNs, EINs, dollar amounts,
+addresses, URLs) using regex patterns. Also detects party names from legal
+preambles using defined-term patterns. Designed so GLiNER can be added later
+as an additional backend — both feed the same DetectedEntity model.
 """
 
 from __future__ import annotations
@@ -16,10 +17,12 @@ from .models import DetectedEntity
 # Regex patterns for structured PII. Each key becomes the entity_type.
 ENTITY_PATTERNS: dict[str, str] = {
     "EMAIL": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
-    "PHONE": r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b",
+    "PHONE": r"(?<![A-Za-z0-9])(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b",
     "SSN": r"\b\d{3}-\d{2}-\d{4}\b",
     "EIN": r"\b\d{2}-\d{7}\b",
     "AMOUNT": r"\$[\d,]+(?:\.\d{2})?\b",
+    "ADDRESS": r"\d+\s+[A-Za-z\s\.]+(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Way|Lane|Ln)\.?,\s+(?:(?:Suite|Ste|Apt|Unit)\s+\d+,\s+)?[A-Za-z\s]+,\s+[A-Z]{2}\s+\d{5}(?:-\d{4})?",
+    "URL": r"(?:https?://)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:/[^\s,)]*)?(?<![.,)])",
 }
 
 # Pre-compile for performance
@@ -79,6 +82,9 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
     Each unique match is returned with its occurrence count and a generated
     placeholder. Confidence is always 1.0 for regex matches.
 
+    URL matches that are substrings of detected EMAIL matches are filtered
+    out (e.g., ``softwareexperts.io`` from ``michael@softwareexperts.io``).
+
     Args:
         text: The full document text to scan.
 
@@ -86,12 +92,27 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
         List of DetectedEntity instances, one per unique match text per type.
     """
     entities: list[DetectedEntity] = []
+    email_texts: set[str] = set()
+
+    # First pass: collect all matches by type
+    matches_by_type: dict[str, Counter] = {}
     for entity_type, pattern in _COMPILED_PATTERNS.items():
         matches = pattern.findall(text)
-        if not matches:
-            continue
-        counts = Counter(matches)
-        for idx, (match_text, count) in enumerate(counts.most_common(), start=1):
+        if matches:
+            matches_by_type[entity_type] = Counter(matches)
+
+    # Collect email texts for URL dedup
+    if "EMAIL" in matches_by_type:
+        email_texts = set(matches_by_type["EMAIL"].keys())
+
+    for entity_type, counts in matches_by_type.items():
+        idx = 0
+        for match_text, count in counts.most_common():
+            # Filter out URL matches that are substrings of detected emails
+            if entity_type == "URL" and email_texts:
+                if any(match_text in email for email in email_texts):
+                    continue
+            idx += 1
             entities.append(DetectedEntity(
                 text=match_text,
                 entity_type=entity_type,
@@ -157,3 +178,93 @@ def detect_entities(
     entities.sort(key=lambda e: (-e.count, e.text))
 
     return entities
+
+
+# ---------------------------------------------------------------------------
+# Party name detection from legal preambles
+# ---------------------------------------------------------------------------
+
+# Corporate suffixes used to identify company names in preamble text.
+_CORPORATE_SUFFIXES = (
+    r"Inc\.?",
+    r"LLC",
+    r"Corp\.?",
+    r"Corporation",
+    r"Ltd\.?",
+    r"LLP",
+    r"L\.P\.?",
+    r"LP",
+    r"P\.C\.?",
+    r"PC",
+    r"Co\.?",
+    r"Company",
+    r"Group",
+    r"Partners",
+    r"Associates",
+    r"Enterprises",
+    r"Holdings",
+    r"International",
+    r"Foundation",
+    r"Technologies",
+    r"Solutions",
+    r"Services",
+    r"Systems",
+)
+
+_SUFFIX_PATTERN = "|".join(_CORPORATE_SUFFIXES)
+
+# Pattern 1: Defined-term — "Company Name Inc. (the "Label")" or ("Label")
+# Handles both straight quotes (" ") and curly quotes (\u201c \u201d).
+_DEFINED_TERM_RE = re.compile(
+    rf'((?:[A-Z][A-Za-z&\-\']+ )*(?:{_SUFFIX_PATTERN}))(?:,?)\s+'
+    r'(?:\((?:the\s+)?["\u201c]([^"\u201d]+)["\u201d]\))',
+    re.UNICODE,
+)
+
+# Pattern 2: "Dear Name," — catches addressee in letter-format agreements.
+_DEAR_RE = re.compile(
+    rf'Dear\s+((?:[A-Z][A-Za-z&\-\']+ )*(?:{_SUFFIX_PATTERN})),',
+    re.UNICODE,
+)
+
+
+def detect_party_names(text: str) -> list[dict[str, str]]:
+    """
+    Detect company/party names from a legal preamble using defined-term patterns.
+
+    Searches the first ~2000 characters of the text for:
+
+    1. **Defined-term pattern** — ``Company Name Inc. (the "Label")`` with
+       corporate suffix filtering (Inc., LLC, Corp., Ltd., LLP, etc.).
+       Handles both straight and curly quotes.
+
+    2. **"Dear Name," pattern** — catches addressee in letter-format
+       agreements, also requiring a corporate suffix.
+
+    Args:
+        text: The preamble text to scan (typically first ~2000 chars).
+
+    Returns:
+        A list of dicts, each with ``"name"`` and ``"label"`` keys.
+        E.g., ``[{"name": "Making Reign Inc.", "label": "Company"}]``
+    """
+    preamble = text[:2000]
+    results: list[dict[str, str]] = []
+    seen_names: set[str] = set()
+
+    # Pattern 1: Defined terms
+    for match in _DEFINED_TERM_RE.finditer(preamble):
+        name = match.group(1).strip()
+        label = match.group(2).strip()
+        if name.lower() not in seen_names:
+            seen_names.add(name.lower())
+            results.append({"name": name, "label": label})
+
+    # Pattern 2: "Dear Name,"
+    for match in _DEAR_RE.finditer(preamble):
+        name = match.group(1).strip()
+        if name.lower() not in seen_names:
+            seen_names.add(name.lower())
+            results.append({"name": name, "label": "Addressee"})
+
+    return results

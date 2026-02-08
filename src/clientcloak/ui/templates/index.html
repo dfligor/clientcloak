@@ -92,7 +92,7 @@
                                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                                 <span class="font-medium" x-text="filename"></span>
                             </div>
-                            <p class="text-xs text-gray-400">Uploaded successfully</p>
+                            <p class="text-xs text-gray-400">Ready</p>
                         </div>
                     </template>
                 </div>
@@ -104,7 +104,7 @@
         <div x-show="cloakStep === 1.5" class="step-enter max-w-2xl mx-auto">
             <div class="flex items-center gap-2 mb-2 text-success">
                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                <span class="font-medium">Contract uploaded: <span x-text="filename"></span></span>
+                <span class="font-medium">Contract ready: <span x-text="filename"></span></span>
             </div>
             <hr class="my-5 border-gray-200">
 
@@ -153,164 +153,131 @@
         </div>
 
 
-        <!-- ---- Step 2: Name the Parties ---- -->
+        <!-- ---- Step 2: Configure Replacements ---- -->
         <div x-show="cloakStep === 2" class="step-enter max-w-2xl mx-auto">
             <div class="flex items-center gap-2 mb-2 text-success">
                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                <span class="font-medium">Contract uploaded: <span x-text="filename"></span></span>
+                <span class="font-medium">Contract ready: <span x-text="filename"></span></span>
             </div>
             <hr class="my-5 border-gray-200">
 
-            <h2 class="text-xl font-bold text-navy mb-1">Who are the parties in this agreement?</h2>
-            <p class="text-sm text-gray-500 mb-6">We will replace their real names with bracketed labels like [Customer] and [Vendor].</p>
-
-            <!-- Party A -->
-            <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-3 items-center mb-4">
-                <div>
-                    <label for="partyA" class="block text-xs font-medium text-gray-500 mb-1">Real name</label>
-                    <input id="partyA"
-                           type="text"
-                           x-model="partyA"
-                           placeholder="e.g. Acme Corporation"
-                           class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
-                           autocomplete="off">
-                </div>
-                <div class="hidden sm:flex items-center justify-center text-gray-400 pt-5" aria-hidden="true">
-                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                </div>
-                <div>
-                    <label for="labelA" class="block text-xs font-medium text-gray-500 mb-1">Replace with</label>
-                    <input id="labelA"
-                           type="text"
-                           x-model="labelA"
-                           placeholder="e.g. Customer"
-                           class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
-                           autocomplete="off">
+            <!-- Preamble Preview (collapsible, collapsed by default) -->
+            <div class="mb-5" x-show="preambleText">
+                <button class="expand-trigger flex items-center gap-2 text-xs font-medium text-gray-500 hover:text-navy transition-colors"
+                        @click="showPreamble = !showPreamble"
+                        :aria-expanded="showPreamble"
+                        type="button">
+                    <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="showPreamble ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                    Preview document text
+                </button>
+                <div x-show="showPreamble"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 -translate-y-2"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     class="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-4 max-h-48 overflow-y-auto">
+                    <pre class="text-xs text-gray-600 font-mono whitespace-pre-wrap" x-text="preambleText"></pre>
                 </div>
             </div>
 
-            <!-- Party A Aliases -->
-            <div class="ml-4 pl-4 border-l-2 border-gray-200 mb-4">
-                <template x-for="(alias, idx) in aliasesA" :key="'aliasA-'+idx">
-                    <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_auto] gap-3 items-center mb-2">
-                        <div>
-                            <label :for="'aliasAName'+idx" class="block text-xs font-medium text-gray-400 mb-1">Alias name</label>
-                            <input :id="'aliasAName'+idx"
-                                   type="text"
-                                   x-model="alias.name"
-                                   placeholder="e.g. Acme"
-                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
-                                   autocomplete="off">
-                        </div>
-                        <div class="hidden sm:flex items-center justify-center text-gray-400 pt-5" aria-hidden="true">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                        </div>
-                        <div>
-                            <label :for="'aliasALabel'+idx" class="block text-xs font-medium text-gray-400 mb-1">Replace with</label>
-                            <input :id="'aliasALabel'+idx"
-                                   type="text"
-                                   x-model="alias.label"
-                                   placeholder="e.g. Vendor"
-                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
-                                   autocomplete="off">
-                        </div>
-                        <button class="text-gray-400 hover:text-red-500 transition-colors pt-5"
-                                @click="removeAliasA(idx)"
-                                type="button"
-                                aria-label="Remove alias">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
-                    </div>
-                </template>
-                <button class="text-xs text-teal-600 hover:text-teal-800 font-medium transition-colors"
-                        @click="addAliasA()"
-                        type="button">+ Add alias</button>
-            </div>
+            <!-- Unified Replacement Table -->
+            <h2 class="text-xl font-bold text-navy mb-1">We found these items in your document</h2>
+            <p class="text-sm text-gray-500 mb-5">Checked items will be replaced with the label shown. You can edit any label.</p>
 
-            <!-- Party B -->
-            <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-3 items-center mb-5">
-                <div>
-                    <label for="partyB" class="block text-xs font-medium text-gray-500 mb-1">Real name</label>
-                    <input id="partyB"
-                           type="text"
-                           x-model="partyB"
-                           placeholder="e.g. BigCo LLC"
-                           class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
-                           autocomplete="off">
+            <template x-if="replacements.length > 0">
+                <div class="bg-white border border-gray-200 rounded-xl overflow-hidden mb-6">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                                <th class="w-10 px-4 py-2.5"></th>
+                                <th class="text-left px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Found</th>
+                                <th class="text-left px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Type</th>
+                                <th class="text-center px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Count</th>
+                                <th class="text-left px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Replace with</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="(item, idx) in replacements" :key="'repl-'+idx">
+                                <tr class="hover:bg-gray-50/50 transition-colors">
+                                    <td class="px-4 py-2.5">
+                                        <input type="checkbox"
+                                               x-model="item.checked"
+                                               class="rounded border-gray-300 text-teal focus:ring-teal/30"
+                                               :aria-label="'Include ' + item.text">
+                                    </td>
+                                    <td class="px-3 py-2.5">
+                                        <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="item.text"></span>
+                                    </td>
+                                    <td class="px-3 py-2.5">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                                              :class="{
+                                                  'bg-indigo-50 text-indigo-700': item.type === 'COMPANY',
+                                                  'bg-blue-50 text-blue-700': item.type === 'EMAIL',
+                                                  'bg-green-50 text-green-700': item.type === 'PHONE',
+                                                  'bg-red-50 text-red-700': item.type === 'SSN',
+                                                  'bg-amber-50 text-amber-700': item.type === 'AMOUNT',
+                                                  'bg-purple-50 text-purple-700': item.type === 'EIN',
+                                                  'bg-teal-50 text-teal-700': item.type === 'ADDRESS',
+                                                  'bg-cyan-50 text-cyan-700': item.type === 'URL',
+                                                  'bg-gray-100 text-gray-700': !['COMPANY','EMAIL','PHONE','SSN','AMOUNT','EIN','ADDRESS','URL'].includes(item.type),
+                                              }"
+                                              x-text="item.type"></span>
+                                    </td>
+                                    <td class="px-3 py-2.5 text-center text-gray-500" x-text="item.count || ''"></td>
+                                    <td class="px-3 py-2.5">
+                                        <input type="text"
+                                               x-model="item.label"
+                                               class="w-full px-2 py-1 border border-gray-200 rounded text-sm text-teal-700 font-medium focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
+                                               :placeholder="item.label">
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
                 </div>
-                <div class="hidden sm:flex items-center justify-center text-gray-400 pt-5" aria-hidden="true">
-                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                </div>
-                <div>
-                    <label for="labelB" class="block text-xs font-medium text-gray-500 mb-1">Replace with</label>
-                    <input id="labelB"
-                           type="text"
-                           x-model="labelB"
-                           placeholder="e.g. Vendor"
-                           class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
-                           autocomplete="off">
-                </div>
-            </div>
+            </template>
 
-            <!-- Party B Aliases -->
-            <div class="ml-4 pl-4 border-l-2 border-gray-200 mb-5">
-                <template x-for="(alias, idx) in aliasesB" :key="'aliasB-'+idx">
-                    <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_auto] gap-3 items-center mb-2">
-                        <div>
-                            <label :for="'aliasBName'+idx" class="block text-xs font-medium text-gray-400 mb-1">Alias name</label>
-                            <input :id="'aliasBName'+idx"
-                                   type="text"
-                                   x-model="alias.name"
-                                   placeholder="e.g. BigCo"
-                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
-                                   autocomplete="off">
-                        </div>
-                        <div class="hidden sm:flex items-center justify-center text-gray-400 pt-5" aria-hidden="true">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                        </div>
-                        <div>
-                            <label :for="'aliasBLabel'+idx" class="block text-xs font-medium text-gray-400 mb-1">Replace with</label>
-                            <input :id="'aliasBLabel'+idx"
-                                   type="text"
-                                   x-model="alias.label"
-                                   placeholder="e.g. Customer"
-                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
-                                   autocomplete="off">
-                        </div>
-                        <button class="text-gray-400 hover:text-red-500 transition-colors pt-5"
-                                @click="removeAliasB(idx)"
-                                type="button"
-                                aria-label="Remove alias">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
-                    </div>
-                </template>
-                <button class="text-xs text-teal-600 hover:text-teal-800 font-medium transition-colors"
-                        @click="addAliasB()"
-                        type="button">+ Add alias</button>
-            </div>
+            <template x-if="replacements.length === 0">
+                <div class="bg-gray-50 border border-gray-200 rounded-xl p-6 mb-6 text-center">
+                    <p class="text-sm text-gray-500">No items were automatically detected. You can add replacements manually below.</p>
+                </div>
+            </template>
 
-            <!-- Quick-Pick Chips -->
+            <!-- Freeform Input: + Add replacement -->
             <div class="mb-6">
-                <p class="text-xs text-gray-400 mb-2">Quick pick:</p>
-                <div class="flex flex-wrap gap-2">
-                    <button class="chip"
-                            :class="{'selected': labelA === 'Customer' && labelB === 'Vendor'}"
-                            @click="applyQuickPick('Customer', 'Vendor')"
-                            type="button">Customer / Vendor</button>
-                    <button class="chip"
-                            :class="{'selected': labelA === 'Licensor' && labelB === 'Licensee'}"
-                            @click="applyQuickPick('Licensor', 'Licensee')"
-                            type="button">Licensor / Licensee</button>
-                    <button class="chip"
-                            :class="{'selected': labelA === 'Buyer' && labelB === 'Seller'}"
-                            @click="applyQuickPick('Buyer', 'Seller')"
-                            type="button">Buyer / Seller</button>
-                    <button class="chip"
-                            :class="{'selected': labelA === 'Provider' && labelB === 'Client'}"
-                            @click="applyQuickPick('Provider', 'Client')"
-                            type="button">Provider / Client</button>
-                </div>
+                <template x-for="(cr, idx) in customReplacements" :key="'custom-'+idx">
+                    <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_auto] gap-3 items-center mb-2">
+                        <div>
+                            <label :for="'customText'+idx" class="block text-xs font-medium text-gray-400 mb-1">Text to find</label>
+                            <input :id="'customText'+idx"
+                                   type="text"
+                                   x-model="cr.text"
+                                   placeholder="e.g. John Smith"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
+                                   autocomplete="off">
+                        </div>
+                        <div class="hidden sm:flex items-center justify-center text-gray-400 pt-5" aria-hidden="true">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </div>
+                        <div>
+                            <label :for="'customLabel'+idx" class="block text-xs font-medium text-gray-400 mb-1">Replace with</label>
+                            <input :id="'customLabel'+idx"
+                                   type="text"
+                                   x-model="cr.label"
+                                   placeholder="e.g. [Person-1]"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
+                                   autocomplete="off">
+                        </div>
+                        <button class="text-gray-400 hover:text-red-500 transition-colors pt-5"
+                                @click="customReplacements.splice(idx, 1)"
+                                type="button"
+                                aria-label="Remove replacement">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
+                </template>
+                <button class="text-xs text-teal-600 hover:text-teal-800 font-medium transition-colors"
+                        @click="customReplacements.push({text: '', label: ''})"
+                        type="button">+ Add replacement</button>
             </div>
 
             <!-- Comment Handling -->
@@ -368,104 +335,13 @@
 
             <div class="flex justify-center">
                 <button class="btn-primary"
-                        :disabled="!partyA.trim() || !partyB.trim()"
+                        :disabled="replacements.filter(r => r.checked).length === 0 && customReplacements.filter(cr => cr.text.trim() && cr.label.trim()).length === 0"
                         @click="goToPreview()"
                         aria-label="Continue to preview">
                     Continue
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
                 </button>
             </div>
-        </div>
-
-
-        <!-- ---- Step 2.5: Entity Review ---- -->
-        <div x-show="cloakStep === 2.5" class="step-enter max-w-2xl mx-auto">
-            <div class="flex items-center gap-2 mb-2 text-success">
-                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                <span class="font-medium">Contract uploaded: <span x-text="filename"></span></span>
-            </div>
-            <hr class="my-5 border-gray-200">
-
-            <!-- Loading state -->
-            <template x-if="detecting">
-                <div class="text-center py-8">
-                    <div class="w-10 h-10 border-2 border-teal border-t-transparent rounded-full animate-spin mx-auto mb-3" aria-hidden="true"></div>
-                    <p class="text-sm text-gray-500">Scanning for sensitive data...</p>
-                </div>
-            </template>
-
-            <!-- Results -->
-            <template x-if="!detecting && detectedEntities.length > 0">
-                <div>
-                    <h2 class="text-xl font-bold text-navy mb-1">We found some sensitive data</h2>
-                    <p class="text-sm text-gray-500 mb-5">These items were detected in your document. Checked items will be replaced with generic placeholders.</p>
-
-                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden mb-6">
-                        <table class="w-full text-sm">
-                            <thead class="bg-gray-50 border-b border-gray-200">
-                                <tr>
-                                    <th class="w-10 px-4 py-2.5"></th>
-                                    <th class="text-left px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Found</th>
-                                    <th class="text-left px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Type</th>
-                                    <th class="text-center px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Count</th>
-                                    <th class="text-left px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Replace with</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100">
-                                <template x-for="(entity, idx) in detectedEntities" :key="idx">
-                                    <tr class="hover:bg-gray-50/50 transition-colors">
-                                        <td class="px-4 py-2.5">
-                                            <input type="checkbox"
-                                                   :checked="selectedEntities[entity.text]"
-                                                   @change="selectedEntities[entity.text] = $event.target.checked"
-                                                   class="rounded border-gray-300 text-teal focus:ring-teal/30"
-                                                   :aria-label="'Include ' + entity.text">
-                                        </td>
-                                        <td class="px-3 py-2.5">
-                                            <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="entity.text"></span>
-                                        </td>
-                                        <td class="px-3 py-2.5">
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
-                                                  :class="{
-                                                      'bg-blue-50 text-blue-700': entity.entity_type === 'EMAIL',
-                                                      'bg-green-50 text-green-700': entity.entity_type === 'PHONE',
-                                                      'bg-red-50 text-red-700': entity.entity_type === 'SSN',
-                                                      'bg-amber-50 text-amber-700': entity.entity_type === 'AMOUNT',
-                                                      'bg-purple-50 text-purple-700': entity.entity_type === 'EIN',
-                                                      'bg-gray-100 text-gray-700': !['EMAIL','PHONE','SSN','AMOUNT','EIN'].includes(entity.entity_type),
-                                                  }"
-                                                  x-text="entity.entity_type"></span>
-                                        </td>
-                                        <td class="px-3 py-2.5 text-center text-gray-500" x-text="entity.count"></td>
-                                        <td class="px-3 py-2.5">
-                                            <span class="text-teal-700 font-medium text-sm" x-text="entity.suggested_placeholder"></span>
-                                        </td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="flex items-center justify-center gap-3">
-                        <button class="btn-secondary"
-                                @click="cloakStep = 2"
-                                type="button">
-                            Back
-                        </button>
-                        <button class="btn-secondary"
-                                @click="selectedEntities = {}; goFromEntities()"
-                                type="button">
-                            Skip
-                        </button>
-                        <button class="btn-primary"
-                                @click="goFromEntities()"
-                                aria-label="Continue to preview">
-                            Continue
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
-                        </button>
-                    </div>
-                </div>
-            </template>
         </div>
 
 
@@ -482,35 +358,18 @@
                         <h3 class="text-sm font-semibold text-navy">What we will protect</h3>
                     </div>
                     <div class="space-y-1.5 preview-scroll max-h-48 overflow-y-auto">
-                        <div class="summary-item" x-show="partyA.trim()">
-                            <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="partyA"></span>
-                            <span class="arrow">&rarr;</span>
-                            <span class="text-teal-700 font-medium text-sm" x-text="'[' + labelA + ']'"></span>
-                        </div>
-                        <template x-for="(alias, idx) in aliasesA.filter(a => a.name.trim() && a.label.trim())" :key="'previewA-'+idx">
-                            <div class="summary-item ml-4 pl-4 border-l-2 border-gray-200">
-                                <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="alias.name"></span>
-                                <span class="arrow">&rarr;</span>
-                                <span class="text-teal-700 font-medium text-sm" x-text="'[' + alias.label + ']'"></span>
-                            </div>
-                        </template>
-                        <div class="summary-item" x-show="partyB.trim()">
-                            <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="partyB"></span>
-                            <span class="arrow">&rarr;</span>
-                            <span class="text-teal-700 font-medium text-sm" x-text="'[' + labelB + ']'"></span>
-                        </div>
-                        <template x-for="(alias, idx) in aliasesB.filter(a => a.name.trim() && a.label.trim())" :key="'previewB-'+idx">
-                            <div class="summary-item ml-4 pl-4 border-l-2 border-gray-200">
-                                <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="alias.name"></span>
-                                <span class="arrow">&rarr;</span>
-                                <span class="text-teal-700 font-medium text-sm" x-text="'[' + alias.label + ']'"></span>
-                            </div>
-                        </template>
-                        <template x-for="(entity, idx) in detectedEntities.filter(e => selectedEntities[e.text])" :key="'previewEntity-'+idx">
+                        <template x-for="(item, idx) in replacements.filter(r => r.checked)" :key="'preview-'+idx">
                             <div class="summary-item">
-                                <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="entity.text"></span>
+                                <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="item.text"></span>
                                 <span class="arrow">&rarr;</span>
-                                <span class="text-teal-700 font-medium text-sm" x-text="entity.suggested_placeholder"></span>
+                                <span class="text-teal-700 font-medium text-sm" x-text="item.label"></span>
+                            </div>
+                        </template>
+                        <template x-for="(cr, idx) in customReplacements.filter(c => c.text.trim() && c.label.trim())" :key="'previewCustom-'+idx">
+                            <div class="summary-item">
+                                <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="cr.text"></span>
+                                <span class="arrow">&rarr;</span>
+                                <span class="text-teal-700 font-medium text-sm" x-text="cr.label"></span>
                             </div>
                         </template>
                     </div>
@@ -561,7 +420,7 @@
 
             <div class="flex items-center justify-center gap-3">
                 <button class="btn-secondary"
-                        @click="cloakStep = detectedEntities.length > 0 ? 2.5 : 2"
+                        @click="cloakStep = 2"
                         type="button">
                     Back
                 </button>
@@ -662,6 +521,15 @@
                 </div>
             </div>
 
+            <div class="flex justify-center mb-4">
+                <button class="btn-secondary"
+                        @click="downloadAll()"
+                        type="button">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download Both
+                </button>
+            </div>
+
             <hr class="my-6 border-gray-200">
 
             <!-- Next Steps -->
@@ -710,9 +578,9 @@
                     <div class="bg-gray-50 rounded-lg p-4 relative group">
                         <p class="text-xs font-semibold text-navy mb-1">Redline Review</p>
                         <p class="text-sm text-gray-700 font-mono leading-relaxed pr-16"
-                           x-text="'Review this agreement from [' + labelA + ']\'s perspective. Suggest edits to better protect [' + labelA + ']\'s interests. Explain your reasoning for each change.'"></p>
+                           x-text="'Review this agreement from [' + getPartyALabel() + ']\'s perspective. Suggest edits to better protect [' + getPartyALabel() + ']\'s interests. Explain your reasoning for each change.'"></p>
                         <button class="absolute top-3 right-3 btn-secondary text-xs py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                                @click="copyPrompt('Review this agreement from [' + labelA + ']\'s perspective. Suggest edits to better protect [' + labelA + ']\'s interests. Explain your reasoning for each change.')"
+                                @click="copyPrompt('Review this agreement from [' + getPartyALabel() + ']\'s perspective. Suggest edits to better protect [' + getPartyALabel() + ']\'s interests. Explain your reasoning for each change.')"
                                 aria-label="Copy redline review prompt">Copy</button>
                     </div>
 
@@ -727,9 +595,9 @@
                     <div class="bg-gray-50 rounded-lg p-4 relative group">
                         <p class="text-xs font-semibold text-navy mb-1">Issue Spotting</p>
                         <p class="text-sm text-gray-700 font-mono leading-relaxed pr-16"
-                           x-text="'Identify the top 5 risks for [' + labelA + '] in this agreement. For each risk, suggest protective language or negotiation points.'"></p>
+                           x-text="'Identify the top 5 risks for [' + getPartyALabel() + '] in this agreement. For each risk, suggest protective language or negotiation points.'"></p>
                         <button class="absolute top-3 right-3 btn-secondary text-xs py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                                @click="copyPrompt('Identify the top 5 risks for [' + labelA + '] in this agreement. For each risk, suggest protective language or negotiation points.')"
+                                @click="copyPrompt('Identify the top 5 risks for [' + getPartyALabel() + '] in this agreement. For each risk, suggest protective language or negotiation points.')"
                                 aria-label="Copy issue spotting prompt">Copy</button>
                     </div>
 
@@ -799,8 +667,8 @@
                                     <polyline points="14 2 14 8 20 8"/>
                                 </svg>
                                 <div>
-                                    <p class="text-sm font-medium text-navy">AI's Output</p>
-                                    <p class="text-xs text-gray-400 mt-0.5">Drop a cloaked or redlined .docx</p>
+                                    <p class="text-sm font-medium text-navy">Edited Document</p>
+                                    <p class="text-xs text-gray-400 mt-0.5">Drop your cloaked or redlined .docx</p>
                                 </div>
                             </div>
                         </template>
@@ -928,7 +796,7 @@ function clientCloak() {
     return {
         // ---- Core State ----
         mode: 'cloak',
-        cloakStep: 1,        // 1, 1.5, 2, 2.5, 3, 3.5, 4
+        cloakStep: 1,        // 1, 1.5, 2, 3, 3.5, 4
         uncloakStep: 1,      // 1, 2
 
         // ---- Session ----
@@ -946,20 +814,12 @@ function clientCloak() {
         metadata: {},
         comments: {},
 
-        // ---- Party Config ----
-        partyA: '',
-        partyB: '',
-        labelA: 'Customer',
-        labelB: 'Vendor',
-        // labelACustom / labelBCustom removed: labels are now plain text inputs
-        aliasesA: [],
-        aliasesB: [],
+        // ---- Replacements (unified) ----
+        replacements: [],         // [{text, label, type, count, checked}]
+        customReplacements: [],   // [{text: '', label: ''}]
+        preambleText: null,
+        showPreamble: false,
         commentMode: 'strip',
-
-        // ---- Entity Detection ----
-        detectedEntities: [],
-        selectedEntities: {},  // entity text -> boolean
-        detecting: false,
 
         // ---- Processing ----
         progressStage: 0,    // 0-4
@@ -982,16 +842,6 @@ function clientCloak() {
             this.$nextTick(() => {
                 this.setupDropZones();
             });
-
-            // Restore last-used labels from localStorage
-            try {
-                const saved = localStorage.getItem('clientcloak_labels');
-                if (saved) {
-                    const labels = JSON.parse(saved);
-                    if (labels.labelA) this.labelA = labels.labelA;
-                    if (labels.labelB) this.labelB = labels.labelB;
-                }
-            } catch (e) { /* ignore */ }
         },
 
         setupDropZones() {
@@ -1034,6 +884,36 @@ function clientCloak() {
                 this.securityFindings = data.security_findings || [];
                 this.metadata = data.metadata || {};
                 this.comments = data.comments || {};
+                this.preambleText = data.preamble_text || null;
+
+                // Build unified replacements list
+                this.replacements = [];
+
+                // Add suggested parties as COMPANY type
+                const parties = data.suggested_parties || [];
+                for (const party of parties) {
+                    this.replacements.push({
+                        text: party.name,
+                        label: '[' + party.label + ']',
+                        type: 'COMPANY',
+                        count: null,
+                        checked: true,
+                    });
+                }
+
+                // Add detected entities
+                const entities = data.detected_entities || [];
+                for (const entity of entities) {
+                    this.replacements.push({
+                        text: entity.text,
+                        label: entity.suggested_placeholder,
+                        type: entity.entity_type,
+                        count: entity.count,
+                        checked: true,
+                    });
+                }
+
+                this.customReplacements = [];
 
                 if (this.securityFindings.length > 0) {
                     this.cloakStep = 1.5;
@@ -1049,93 +929,56 @@ function clientCloak() {
 
 
         // ==========================
-        // Cloak: Party Config
+        // Cloak: Replacement Config
         // ==========================
 
-        applyQuickPick(a, b) {
-            this.labelA = a;
-            this.labelB = b;
-        },
-
-        addAliasA() { this.aliasesA.push({ name: '', label: '' }); },
-        removeAliasA(idx) { this.aliasesA.splice(idx, 1); },
-        addAliasB() { this.aliasesB.push({ name: '', label: '' }); },
-        removeAliasB(idx) { this.aliasesB.splice(idx, 1); },
-
         goToPreview() {
-            if (!this.partyA.trim() || !this.partyB.trim()) return;
-
-            // Save labels for next session
-            try {
-                localStorage.setItem('clientcloak_labels', JSON.stringify({
-                    labelA: this.labelA,
-                    labelB: this.labelB,
-                }));
-            } catch (e) { /* ignore */ }
-
-            // Run entity detection (step 2.5)
-            this.runEntityDetection();
-        },
-
-        async runEntityDetection() {
-            this.detecting = true;
-            this.detectedEntities = [];
-            this.selectedEntities = {};
-            this.cloakStep = 2.5;
-
-            try {
-                const form = new FormData();
-                form.append('session_id', this.sessionId);
-                form.append('party_a', this.partyA);
-                form.append('party_b', this.partyB);
-                const filteredA = this.aliasesA.filter(a => a.name.trim() && a.label.trim());
-                const filteredB = this.aliasesB.filter(a => a.name.trim() && a.label.trim());
-                if (filteredA.length > 0) {
-                    form.append('party_a_aliases', JSON.stringify(filteredA));
-                }
-                if (filteredB.length > 0) {
-                    form.append('party_b_aliases', JSON.stringify(filteredB));
-                }
-
-                const res = await fetch('/api/detect-entities', { method: 'POST', body: form });
-                if (!res.ok) {
-                    const err = await safeJson(res);
-                    throw new Error(err.detail || 'Entity detection failed.');
-                }
-                const entities = await res.json();
-                this.detectedEntities = entities;
-
-                // Check all entities by default
-                for (const entity of entities) {
-                    this.selectedEntities[entity.text] = true;
-                }
-
-                // Auto-advance if no entities found
-                if (entities.length === 0) {
-                    this.cloakStep = 3;
-                }
-            } catch (err) {
-                showToast(err.message, 'error');
-                // Still advance to step 3 on error — entity detection is optional
-                this.cloakStep = 3;
-            } finally {
-                this.detecting = false;
-            }
-        },
-
-        goFromEntities() {
             this.cloakStep = 3;
         },
 
         buildAdditionalReplacements() {
-            // Build placeholder -> original dict from selected entities
-            const replacements = {};
-            for (const entity of this.detectedEntities) {
-                if (this.selectedEntities[entity.text]) {
-                    replacements[entity.suggested_placeholder] = entity.text;
+            // Build placeholder -> original dict from all checked replacements
+            const result = {};
+            for (const item of this.replacements) {
+                if (item.checked && item.text.trim() && item.label.trim()) {
+                    result[item.label] = item.text;
                 }
             }
-            return replacements;
+            // Add custom freeform replacements
+            for (const cr of this.customReplacements) {
+                if (cr.text.trim() && cr.label.trim()) {
+                    result[cr.label] = cr.text;
+                }
+            }
+            return result;
+        },
+
+        getPartyAName() {
+            // First checked COMPANY-type replacement, or a dummy
+            const companies = this.replacements.filter(r => r.checked && r.type === 'COMPANY');
+            return companies.length > 0 ? companies[0].text : 'PartyA';
+        },
+
+        getPartyBName() {
+            // Second checked COMPANY-type replacement, or a dummy
+            const companies = this.replacements.filter(r => r.checked && r.type === 'COMPANY');
+            return companies.length > 1 ? companies[1].text : 'PartyB';
+        },
+
+        getPartyALabel() {
+            const companies = this.replacements.filter(r => r.checked && r.type === 'COMPANY');
+            if (companies.length > 0) {
+                return companies[0].label.replace(/^\[|\]$/g, '');
+            }
+            return 'Customer';
+        },
+
+        getPartyBLabel() {
+            const companies = this.replacements.filter(r => r.checked && r.type === 'COMPANY');
+            if (companies.length > 1) {
+                return companies[1].label.replace(/^\[|\]$/g, '');
+            }
+            return 'Vendor';
         },
 
         commentModeSummary() {
@@ -1169,24 +1012,14 @@ function clientCloak() {
             timers.push(setTimeout(() => { this.progressStage = 3; }, 1400));
 
             try {
-                // Build FormData inline so alias support doesn't depend on
-                // a potentially cached app.js.
                 const form = new FormData();
                 form.append('session_id', this.sessionId);
-                form.append('party_a', this.partyA);
-                form.append('party_b', this.partyB);
-                form.append('party_a_label', this.labelA);
-                form.append('party_b_label', this.labelB);
+                form.append('party_a', this.getPartyAName());
+                form.append('party_b', this.getPartyBName());
+                form.append('party_a_label', this.getPartyALabel());
+                form.append('party_b_label', this.getPartyBLabel());
                 form.append('comment_mode', this.commentMode);
                 form.append('strip_metadata', 'true');
-                const filteredA = this.aliasesA.filter(a => a.name.trim() && a.label.trim());
-                const filteredB = this.aliasesB.filter(a => a.name.trim() && a.label.trim());
-                if (filteredA.length > 0) {
-                    form.append('party_a_aliases', JSON.stringify(filteredA));
-                }
-                if (filteredB.length > 0) {
-                    form.append('party_b_aliases', JSON.stringify(filteredB));
-                }
                 const additionalReplacements = this.buildAdditionalReplacements();
                 if (Object.keys(additionalReplacements).length > 0) {
                     form.append('additional_replacements', JSON.stringify(additionalReplacements));
@@ -1227,9 +1060,7 @@ function clientCloak() {
                 showToast('Download not available. Please try cloaking again.', 'error');
                 return;
             }
-            const name = this.filename
-                ? this.filename.replace('.docx', '_cloaked.docx')
-                : 'cloaked_document.docx';
+            const name = this.result.sanitized_filename || 'cloaked.docx';
             downloadFile(this.result.download_url, name);
         },
 
@@ -1238,10 +1069,13 @@ function clientCloak() {
                 showToast('Download not available. Please try cloaking again.', 'error');
                 return;
             }
-            const name = this.filename
-                ? this.filename.replace('.docx', '_mapping.json')
-                : 'mapping.json';
+            const name = this.result.sanitized_mapping_filename || 'mapping.json';
             downloadFile(this.result.mapping_url, name);
+        },
+
+        downloadAll() {
+            this.downloadCloakedDoc();
+            setTimeout(() => this.downloadMappingFile(), 500);
         },
 
 
@@ -1257,17 +1091,19 @@ function clientCloak() {
             this.securityFindings = [];
             this.metadata = {};
             this.comments = {};
-            this.partyA = '';
-            this.partyB = '';
-            this.aliasesA = [];
-            this.aliasesB = [];
+            this.replacements = [];
+            this.customReplacements = [];
+            this.preambleText = null;
+            this.showPreamble = false;
             this.commentMode = 'strip';
-            this.detectedEntities = [];
-            this.selectedEntities = {};
-            this.detecting = false;
             this.progressStage = 0;
             this.result = {};
             this.showPromptTips = false;
+
+            // Reset the file input so re-uploading the same file triggers change
+            if (this.$refs.cloakFileInput) {
+                this.$refs.cloakFileInput.value = '';
+            }
 
             this.$nextTick(() => this.setupDropZones());
         },

@@ -14,7 +14,8 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from ...cloaker import cloak_document, preview_entities, sanitize_filename
 from ...comments import inspect_comments
-from ...docx_handler import load_document
+from ...detector import detect_entities, detect_party_names
+from ...docx_handler import extract_all_text, load_document
 from ...metadata import inspect_metadata
 from ...models import CloakConfig, CommentMode, PartyAlias
 from ...security import scan_document
@@ -97,6 +98,28 @@ async def upload_document(file: UploadFile = File(...)):
         logger.warning("Comment inspection failed", session_id=session_id, error=str(exc))
         comments = {"authors": [], "count": 0}
 
+    # --- Extract text for entity and party detection ---
+    preamble_text = ""
+    detected_entities = []
+    suggested_parties = []
+    try:
+        text_fragments = extract_all_text(doc)
+        full_text = "\n".join(text for text, _source in text_fragments)
+
+        # Preamble: first ~5 non-empty paragraphs
+        non_empty = [text for text, _source in text_fragments if text.strip()]
+        preamble_text = "\n".join(non_empty[:5])
+
+        # Detect entities (no party name filtering yet — that happens at cloak time)
+        entities = detect_entities(full_text)
+        detected_entities = [e.model_dump() for e in entities]
+
+        # Detect party names from preamble
+        preamble_for_parties = "\n".join(non_empty[:10])  # slightly more context for party detection
+        suggested_parties = detect_party_names(preamble_for_parties)
+    except Exception as exc:
+        logger.warning("Text extraction/detection failed", session_id=session_id, error=str(exc))
+
     # --- Save the original filename for later reference ---
     try:
         name_file = get_session_file(session_id, ".original_filename")
@@ -110,6 +133,9 @@ async def upload_document(file: UploadFile = File(...)):
         "security_findings": security_findings,
         "metadata": metadata,
         "comments": comments,
+        "preamble_text": preamble_text,
+        "detected_entities": detected_entities,
+        "suggested_parties": suggested_parties,
     })
 
 
@@ -285,11 +311,27 @@ async def cloak(
     # --- Build mapping preview (first 10 entries) ---
     mapping_preview = dict(list(result.mapping.mappings.items())[:10])
 
+    # --- Compute sanitized filenames for frontend downloads ---
+    sanitized_filename = "cloaked.docx"
+    sanitized_mapping_filename = "mapping.json"
+    try:
+        name_file = session_dir / ".original_filename"
+        if name_file.is_file():
+            original_name = name_file.read_text(encoding="utf-8").strip()
+            stem = original_name.rsplit(".", 1)[0]
+            sanitized_stem = sanitize_filename(stem, cloak_replacements)
+            sanitized_filename = f"{sanitized_stem}_cloaked.docx"
+            sanitized_mapping_filename = f"{sanitized_stem}_mapping.json"
+    except Exception:
+        pass
+
     return JSONResponse(content={
         "replacements_applied": result.replacements_applied,
         "mapping_preview": mapping_preview,
         "download_url": f"/api/download/{session_id}/cloaked",
         "mapping_url": f"/api/download/{session_id}/mapping",
+        "sanitized_filename": sanitized_filename,
+        "sanitized_mapping_filename": sanitized_mapping_filename,
     })
 
 
@@ -339,7 +381,23 @@ async def download_file(session_id: str, file_type: str):
     else:
         file_path = session_dir / "mapping.json"
         media_type = "application/json"
-        download_name = "mapping.json"
+        # Try to get sanitized mapping filename
+        try:
+            name_file = session_dir / ".original_filename"
+            if name_file.is_file():
+                original_name = name_file.read_text(encoding="utf-8").strip()
+                stem = original_name.rsplit(".", 1)[0]
+                replacements_file = session_dir / ".cloak_replacements.json"
+                if replacements_file.is_file():
+                    cloak_replacements = json.loads(
+                        replacements_file.read_text(encoding="utf-8")
+                    )
+                    stem = sanitize_filename(stem, cloak_replacements)
+                download_name = f"{stem}_mapping.json"
+            else:
+                download_name = "mapping.json"
+        except Exception:
+            download_name = "mapping.json"
 
     if not file_path.is_file():
         raise HTTPException(
