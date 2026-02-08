@@ -39,13 +39,15 @@ Sanitized Doc + Mapping File -> [Uncloak] -> Restored Doc
 
 ## Features
 
+- **Auto-Detection**: Automatically finds company names, person names, emails, phone numbers, addresses, SSNs, EINs, dollar amounts, and URLs
 - **Party Name Replacement**: Replace "Acme Corp" -> "[Customer]", "BigCo LLC" -> "[Vendor]" with customizable labels
 - **Party Aliases**: Handle parenthetical definitions like `Acme Corp. ("Acme")` — both forms get replaced
-- **Filename Sanitization**: Output filenames are scrubbed too — no identity leaks in the file name
+- **Person Name Detection**: Catches individual names in signature blocks ("Name:", "By:", "Attn:" patterns)
+- **Filename Sanitization**: Output filenames are scrubbed of party names — handles CamelCase, underscores, and names without corporate suffixes
 - **Security Scanning**: Detects hidden text and prompt injection attempts from opposing counsel
 - **Metadata Removal**: Strips author names, company, revision history, timestamps
 - **Comment Handling**: Strip, anonymize, or fully sanitize Word comments
-- **Bidirectional**: Cloak before sharing, uncloak when you need originals back
+- **Bidirectional**: Cloak before sharing, uncloak when you need originals back — filenames are restored too
 - **Format Preservation**: Maintains document formatting, track changes, and comments
 - **100% Local**: All processing on your machine. No data sent anywhere.
 
@@ -90,11 +92,12 @@ clientcloak inspect contract.docx
 
 ## Workflow
 
-1. **Cloak**: Upload your contract, specify party names, review what will be protected
-2. **Download**: Get the sanitized document + mapping file (keep mapping file safe!)
-3. **Use it**: Send to an AI tool, review in public, share as a template — whatever you need
-4. **Uncloak** (when needed): Upload the document + your mapping file to restore original names
-5. **Done**: Get the final document with real names back in place
+1. **Cloak**: Upload your contract — party names, person names, and PII are auto-detected
+2. **Review**: Edit the replacement table, add anything the auto-detection missed
+3. **Download**: Get the sanitized document + mapping file (keep mapping file safe!)
+4. **Use it**: Send to an AI tool, review in public, share as a template — whatever you need
+5. **Uncloak** (when needed): Upload the document + your mapping file to restore original names
+6. **Done**: Get the final document with real names back in place
 
 ## Security Note
 

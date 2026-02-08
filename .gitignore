@@ -43,3 +43,4 @@ tests/fixtures/real_*.docx
 # Internal planning docs (keep local, not in public repo)
 docs/
 Scratchpad.md
+CLAUDE.md

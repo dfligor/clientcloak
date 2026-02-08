@@ -42,8 +42,8 @@
         <!-- ---- Step 1: Upload ---- -->
         <div x-show="cloakStep === 1" class="step-enter">
             <div class="text-center mb-6">
-                <h1 class="text-2xl font-bold text-navy mb-2">Protect the names in your document</h1>
-                <p class="text-gray-500">Replace real names with generic labels -- for AI review, working in public, creating templates, or sharing safely.</p>
+                <h1 class="text-2xl font-bold text-navy mb-2">Protect the confidential information in your document</h1>
+                <p class="text-gray-500">Replace confidential information with generic labels -- for AI review, working in public, creating templates, or sharing safely.</p>
             </div>
 
             <div class="drop-zone max-w-xl mx-auto p-10"
@@ -451,7 +451,7 @@
             <ul class="progress-checklist text-left max-w-xs mx-auto mb-8" role="list" aria-label="Processing progress">
                 <li :class="progressStage >= 1 ? 'completed' : (progressStage === 0 ? 'active' : 'pending')">
                     <span class="status-check" :class="progressStage >= 1 ? 'done' : (progressStage === 0 ? 'active' : 'waiting')" aria-hidden="true"></span>
-                    Replacing party names
+                    Replacing confidential information
                 </li>
                 <li :class="progressStage >= 2 ? 'completed' : (progressStage === 1 ? 'active' : 'pending')">
                     <span class="status-check" :class="progressStage >= 2 ? 'done' : (progressStage === 1 ? 'active' : 'waiting')" aria-hidden="true"></span>
@@ -484,7 +484,7 @@
                 </svg>
             </div>
             <h2 class="text-xl font-bold text-navy mb-1">Document cloaked</h2>
-            <p class="text-sm text-gray-500 mb-8">All real names have been replaced. Your document is ready to share safely.</p>
+            <p class="text-sm text-gray-500 mb-8">Confidential information has been replaced. Your document is ready to share safely.</p>
 
             <!-- Download Cards -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
@@ -512,7 +512,7 @@
                         </svg>
                     </div>
                     <h3 class="text-base font-semibold text-navy mb-1">Mapping Key</h3>
-                    <p class="text-xs text-gray-500 mb-4">Keep this private. You will need it to restore the real names.</p>
+                    <p class="text-xs text-gray-500 mb-4">Keep this private. You will need it to restore the original information.</p>
                     <button class="btn-primary btn-teal w-full justify-center"
                             @click="downloadMappingFile()"
                             aria-label="Download mapping key">
@@ -543,7 +543,7 @@
                     </li>
                     <li class="flex items-start gap-2">
                         <span class="text-teal mt-0.5 flex-shrink-0">&#x2022;</span>
-                        <span><strong>Work in public</strong> -- Review on a plane, coffee shop, or shared screen without exposing client names</span>
+                        <span><strong>Work in public</strong> -- Review on a plane, coffee shop, or shared screen without exposing confidential information</span>
                     </li>
                     <li class="flex items-start gap-2">
                         <span class="text-teal mt-0.5 flex-shrink-0">&#x2022;</span>
@@ -551,7 +551,7 @@
                     </li>
                     <li class="flex items-start gap-2">
                         <span class="text-teal mt-0.5 flex-shrink-0">&#x2022;</span>
-                        <span><strong>Restore later</strong> -- Come back anytime with the mapping key to put the real names back</span>
+                        <span><strong>Restore later</strong> -- Come back anytime with the mapping key to restore the original information</span>
                     </li>
                 </ul>
             </div>
@@ -638,8 +638,8 @@
         <!-- ---- Step 1: Upload Two Files ---- -->
         <div x-show="uncloakStep === 1" class="step-enter">
             <div class="text-center mb-6">
-                <h1 class="text-2xl font-bold text-navy mb-2">Restore the real names</h1>
-                <p class="text-gray-500">Upload a cloaked document along with its mapping key, and we will put the real names back.</p>
+                <h1 class="text-2xl font-bold text-navy mb-2">Restore the original information</h1>
+                <p class="text-gray-500">Upload a cloaked document along with its mapping key, and we will restore the original information.</p>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto mb-8">
@@ -725,7 +725,7 @@
                 <button class="btn-primary"
                         :disabled="!uncloakRedlinedFile || !uncloakMappingFile || processing"
                         @click="executeUncloaking()"
-                        aria-label="Restore original names">
+                        aria-label="Restore original information">
                     <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4" opacity="0.4"/></svg>
                     Restore Document
                 </button>
@@ -741,7 +741,7 @@
                     <path d="M7 11V7a5 5 0 0110 0v4" opacity="0.4"/>
                 </svg>
             </div>
-            <h2 class="text-lg font-bold text-navy mb-1">Restoring original names...</h2>
+            <h2 class="text-lg font-bold text-navy mb-1">Restoring original information...</h2>
             <p class="text-sm text-gray-500">This usually takes just a moment.</p>
         </div>
 
@@ -753,7 +753,7 @@
                 </svg>
             </div>
             <h2 class="text-xl font-bold text-navy mb-1">Document uncloaked</h2>
-            <p class="text-sm text-gray-500 mb-2">The real names are back where they belong.</p>
+            <p class="text-sm text-gray-500 mb-2">The original information has been restored.</p>
             <p x-show="uncloakResult && uncloakResult.replacements_restored"
                class="text-sm text-teal-700 font-medium mb-8">
                 <span x-text="uncloakResult.replacements_restored"></span> replacement<span x-text="uncloakResult.replacements_restored !== 1 ? 's' : ''"></span> restored.
@@ -767,7 +767,7 @@
                     </svg>
                 </div>
                 <h3 class="text-base font-semibold text-navy mb-1">Final Document</h3>
-                <p class="text-xs text-gray-500 mb-4">Real names restored to their original places.</p>
+                <p class="text-xs text-gray-500 mb-4">Original information restored throughout the document.</p>
                 <button class="btn-primary w-full justify-center"
                         @click="downloadUncloakedDoc()"
                         aria-label="Download final document">
