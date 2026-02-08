@@ -20,6 +20,7 @@ from .docx_handler import (
     extract_all_text,
     load_document,
     replace_text_in_document,
+    replace_text_in_xml,
     save_document,
 )
 from .mapping import create_mapping, get_cloak_replacements, save_mapping
@@ -205,6 +206,14 @@ def cloak_document(
 
     # --- 5. Save document, then optionally strip metadata ---
     save_document(doc, output_path)
+
+    # --- 5b. Replace text in tracked changes (XML-level) ---
+    # python-docx doesn't expose runs inside <w:ins>/<w:del> elements.
+    # This catches originals in tracked changes, text boxes, footnotes.
+    xml_count = replace_text_in_xml(output_path, cloak_replacements)
+    if xml_count:
+        replacement_count += xml_count
+        logger.info("Applied %d XML-level replacement(s) (tracked changes, etc.).", xml_count)
 
     metadata_report = None
     if config.strip_metadata:

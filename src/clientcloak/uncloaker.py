@@ -15,7 +15,12 @@ import logging
 from pathlib import Path
 
 from .comments import restore_comment_authors
-from .docx_handler import load_document, replace_text_in_document, save_document
+from .docx_handler import (
+    load_document,
+    replace_text_in_document,
+    replace_text_in_xml,
+    save_document,
+)
 from .mapping import load_mapping
 
 logger = logging.getLogger(__name__)
@@ -85,6 +90,13 @@ def uncloak_document(
 
     # --- 5. Save ---
     save_document(doc, output_path)
+
+    # --- 5b. Replace text in tracked changes (XML-level) ---
+    # python-docx doesn't expose runs inside <w:ins>/<w:del> elements.
+    # This catches placeholders in tracked changes, text boxes, footnotes.
+    xml_count = replace_text_in_xml(output_path, replacements, match_case=False)
+    if xml_count:
+        logger.info("Applied %d XML-level replacement(s) (tracked changes, etc.).", xml_count)
 
     # --- 6. Restore comment authors ---
     if mapping.comment_authors:

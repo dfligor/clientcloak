@@ -19,6 +19,7 @@ import logging
 import re
 import zipfile
 from copy import deepcopy
+from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -648,4 +649,98 @@ def _replace_in_tables(
                 # Nested tables.
                 if cell.tables:
                     total += _replace_in_tables(cell.tables, pattern, lookup, match_case)
+    return total
+
+
+# ---------------------------------------------------------------------------
+# Public API: ZIP-level XML replacement (tracked changes, text boxes, etc.)
+# ---------------------------------------------------------------------------
+
+def replace_text_in_xml(
+    docx_path: str | Path,
+    replacements: dict[str, str],
+    *,
+    match_case: bool = True,
+) -> int:
+    """
+    Apply text replacements directly in the .docx XML.
+
+    This catches text that python-docx does not expose through its API,
+    most notably runs inside tracked-change elements (``<w:ins>``,
+    ``<w:del>``), text boxes, and footnotes/endnotes.
+
+    Operates on the saved ``.docx`` file at the ZIP level.  Call this
+    **after** :func:`save_document`.
+
+    Replacements are applied inside ``<w:t>`` elements only, so XML
+    structure and attributes are never affected.
+
+    Args:
+        docx_path: Path to the saved .docx file.
+        replacements: Mapping of ``search_text -> replacement_text``.
+        match_case: If True, apply case transfer to replacement text.
+
+    Returns:
+        The number of individual text substitutions made.
+    """
+    if not replacements:
+        return 0
+
+    docx_path = Path(docx_path)
+
+    sorted_targets = sorted(replacements.keys(), key=len, reverse=True)
+    pattern = re.compile(
+        "|".join(re.escape(t) for t in sorted_targets),
+        flags=re.IGNORECASE,
+    )
+    lookup: dict[str, str] = {k.lower(): v for k, v in replacements.items()}
+
+    # XML parts that may contain document text.
+    text_parts = {
+        "word/document.xml",
+        "word/footnotes.xml",
+        "word/endnotes.xml",
+    }
+
+    input_bytes = docx_path.read_bytes()
+    buf = BytesIO()
+    total = 0
+
+    with zipfile.ZipFile(BytesIO(input_bytes), "r") as zin, \
+         zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            raw = zin.read(item.filename)
+            if item.filename in text_parts or item.filename.startswith("word/header") \
+                    or item.filename.startswith("word/footer"):
+                xml_str = raw.decode("utf-8")
+
+                def _replace_in_wt(m: re.Match) -> str:
+                    nonlocal total
+                    tag_open = m.group(1)
+                    text_content = m.group(2)
+                    tag_close = m.group(3)
+
+                    def _sub(sm: re.Match) -> str:
+                        nonlocal total
+                        total += 1
+                        matched = sm.group()
+                        template = lookup[matched.lower()]
+                        if match_case and not _is_bracketed_label(template):
+                            return _transfer_case(matched, template)
+                        return template
+
+                    new_text = pattern.sub(_sub, text_content)
+                    return tag_open + new_text + tag_close
+
+                xml_str = re.sub(
+                    r"(<w:t[^>]*>)(.*?)(</w:t>)",
+                    _replace_in_wt,
+                    xml_str,
+                    flags=re.DOTALL,
+                )
+                raw = xml_str.encode("utf-8")
+            zout.writestr(item, raw)
+
+    docx_path.write_bytes(buf.getvalue())
+    logger.info("XML-level replacements applied: %d", total)
     return total

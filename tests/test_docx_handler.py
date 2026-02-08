@@ -23,9 +23,10 @@ from clientcloak.docx_handler import (
     extract_all_text,
     load_document,
     replace_text_in_document,
+    replace_text_in_xml,
     save_document,
 )
-from tests.conftest import make_simple_docx, make_table_docx
+from tests.conftest import make_simple_docx, make_table_docx, make_docx_with_tracked_insertion
 
 
 # ===================================================================
@@ -456,3 +457,70 @@ class TestBracketedLabelPreservation:
         assert count == 1
         text = doc.paragraphs[0].text
         assert "VENDOR" in text
+
+
+# ===================================================================
+# replace_text_in_xml (tracked changes, text boxes, footnotes)
+# ===================================================================
+
+class TestReplaceTextInXml:
+    """Tests for replace_text_in_xml() — ZIP-level XML replacement."""
+
+    def test_replaces_text_in_tracked_insertion(self, tmp_path):
+        """Placeholders inside <w:ins> elements should be replaced."""
+        path = make_docx_with_tracked_insertion(
+            tmp_path / "tracked.docx",
+            "Agreement between [Company] and [Vendor].",
+            "[Person-1] will attend the meeting with [Person-2].",
+        )
+        count = replace_text_in_xml(
+            path,
+            {"[Person-1]": "Jane Smith", "[Person-2]": "Bob Jones",
+             "[Company]": "Acme Corp", "[Vendor]": "BigCo LLC"},
+            match_case=False,
+        )
+        assert count >= 2  # at least the tracked insertion replacements
+
+        # Verify tracked change text is replaced in raw XML
+        import zipfile, re
+        with zipfile.ZipFile(path, "r") as zf:
+            xml = zf.read("word/document.xml").decode("utf-8")
+        ins_matches = re.findall(r"<w:ins\s[^>]*>[\s\S]*?</w:ins>", xml)
+        ins_text = "".join(
+            t for m in ins_matches
+            for t in re.findall(r"<w:t[^>]*>([^<]*)</w:t>", m)
+        )
+        assert "Jane Smith" in ins_text
+        assert "Bob Jones" in ins_text
+        assert "[Person-1]" not in ins_text
+        assert "[Person-2]" not in ins_text
+
+    def test_no_replacements_returns_zero(self, tmp_path):
+        path = make_simple_docx(tmp_path / "plain.docx", ["No placeholders here."])
+        count = replace_text_in_xml(path, {"[Company]": "Acme"}, match_case=False)
+        assert count == 0
+
+    def test_empty_replacements_returns_zero(self, tmp_path):
+        path = make_simple_docx(tmp_path / "plain.docx", ["Some text."])
+        count = replace_text_in_xml(path, {}, match_case=False)
+        assert count == 0
+
+    def test_case_transfer_in_xml(self, tmp_path):
+        """When match_case=True, case transfer should apply in XML too."""
+        path = make_docx_with_tracked_insertion(
+            tmp_path / "case.docx",
+            "Body text.",
+            "ACME shipped the product.",
+        )
+        count = replace_text_in_xml(
+            path,
+            {"Acme": "[Vendor]"},
+            match_case=True,
+        )
+        assert count >= 1
+
+        import zipfile
+        with zipfile.ZipFile(path, "r") as zf:
+            xml = zf.read("word/document.xml").decode("utf-8")
+        # Bracketed labels should be preserved verbatim
+        assert "[Vendor]" in xml

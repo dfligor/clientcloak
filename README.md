@@ -46,8 +46,8 @@ Sanitized Doc + Mapping File -> [Uncloak] -> Restored Doc
 - **Filename Sanitization**: Output filenames are scrubbed of party names — handles CamelCase, underscores, and names without corporate suffixes
 - **Security Scanning**: Detects hidden text and prompt injection attempts from opposing counsel
 - **Metadata Removal**: Strips author names, company, revision history, timestamps
-- **Comment Handling**: Strip, anonymize, or fully sanitize Word comments
-- **Bidirectional**: Cloak before sharing, uncloak when you need originals back — filenames are restored too
+- **Comment Handling**: Keep, strip, or sanitize Word comments — author names are anonymized and restored on uncloak
+- **Bidirectional**: Cloak before sharing, uncloak when you need originals back — filenames and comment authors are restored too
 - **Format Preservation**: Maintains document formatting, track changes, and comments
 - **100% Local**: All processing on your machine. No data sent anywhere.
 

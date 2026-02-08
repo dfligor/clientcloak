@@ -102,6 +102,39 @@ def _inject_comments_xml(path: Path, comments: list[dict]) -> None:
     path.write_bytes(buf.getvalue())
 
 
+def make_docx_with_tracked_insertion(
+    path: Path, body_text: str, inserted_text: str,
+) -> Path:
+    """Create a .docx with body text and a tracked insertion (w:ins) paragraph."""
+    doc = Document()
+    doc.add_paragraph(body_text)
+    doc.save(str(path))
+
+    # Inject a <w:ins> element via ZIP manipulation (python-docx doesn't
+    # support creating tracked changes).
+    ns_w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    original = path.read_bytes()
+    buf = BytesIO()
+    with zipfile.ZipFile(BytesIO(original), "r") as zin, \
+         zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            raw = zin.read(item.filename)
+            if item.filename == "word/document.xml":
+                xml_str = raw.decode("utf-8")
+                # Insert a tracked-change paragraph before </w:body>
+                ins_xml = (
+                    f'<w:p><w:ins w:id="99" w:author="Test" '
+                    f'w:date="2026-01-01T00:00:00Z">'
+                    f'<w:r><w:t>{inserted_text}</w:t></w:r>'
+                    f'</w:ins></w:p>'
+                )
+                xml_str = xml_str.replace("</w:body>", ins_xml + "</w:body>")
+                raw = xml_str.encode("utf-8")
+            zout.writestr(item, raw)
+    path.write_bytes(buf.getvalue())
+    return path
+
+
 def make_docx_with_hidden_text(path: Path, normal_text: str, hidden_text: str) -> Path:
     """Create a .docx with a hidden run (font.hidden = True)."""
     doc = Document()
