@@ -1169,9 +1169,7 @@ function clientCloak() {
                 showToast('Download not available. Please try again.', 'error');
                 return;
             }
-            const name = this.uncloakRedlinedFile
-                ? this.uncloakRedlinedFile.name.replace('.docx', '_uncloaked.docx')
-                : 'uncloaked_document.docx';
+            const name = this.uncloakResult.uncloaked_filename || 'uncloaked.docx';
             downloadFile(this.uncloakResult.download_url, name);
         },
 

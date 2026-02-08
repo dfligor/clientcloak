@@ -11,6 +11,7 @@ import structlog
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
+from ...mapping import load_mapping
 from ...sessions import create_session, get_session_dir, get_session_file
 from ...uncloaker import uncloak_document
 
@@ -100,10 +101,38 @@ async def uncloak(
         logger.error("Uncloaking failed", session_id=session_id, error=str(exc))
         raise HTTPException(status_code=500, detail=f"Uncloaking failed: {exc}") from exc
 
+    # --- Compute restored filename ---
+    # Apply the mapping (placeholder -> original) to the uploaded filename
+    # so the download has the real party names back.
+    uncloaked_filename = "uncloaked.docx"
+    try:
+        if redlined_file.filename:
+            stem = redlined_file.filename.rsplit(".", 1)[0]
+            # Remove _cloaked suffix if present
+            if stem.endswith("_cloaked"):
+                stem = stem[:-len("_cloaked")]
+            mapping = load_mapping(mapping_path)
+            # mapping.mappings is placeholder -> original
+            for placeholder, original in sorted(
+                mapping.mappings.items(), key=lambda kv: len(kv[0]), reverse=True
+            ):
+                stem = stem.replace(placeholder, original)
+            uncloaked_filename = f"{stem}_uncloaked.docx"
+    except Exception:
+        pass
+
+    # Save the restored filename for the download endpoint
+    try:
+        name_file = get_session_file(session_id, ".uncloaked_filename")
+        name_file.write_text(uncloaked_filename, encoding="utf-8")
+    except Exception:
+        pass
+
     return JSONResponse(content={
         "session_id": session_id,
         "replacements_restored": replacements_restored,
         "download_url": f"/api/download-uncloaked/{session_id}",
+        "uncloaked_filename": uncloaked_filename,
     })
 
 
@@ -126,8 +155,17 @@ async def download_uncloaked(session_id: str):
             detail="Uncloaked file not found. Please run the uncloaking operation first.",
         )
 
+    # Try to use the restored filename
+    download_name = "uncloaked.docx"
+    try:
+        name_file = session_dir / ".uncloaked_filename"
+        if name_file.is_file():
+            download_name = name_file.read_text(encoding="utf-8").strip()
+    except Exception:
+        pass
+
     return FileResponse(
         path=str(file_path),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename="uncloaked.docx",
+        filename=download_name,
     )

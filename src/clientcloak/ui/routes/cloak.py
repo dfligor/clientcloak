@@ -321,7 +321,7 @@ async def cloak(
             stem = original_name.rsplit(".", 1)[0]
             sanitized_stem = sanitize_filename(stem, cloak_replacements)
             sanitized_filename = f"{sanitized_stem}_cloaked.docx"
-            sanitized_mapping_filename = f"{sanitized_stem}_mapping.json"
+            sanitized_mapping_filename = f"{stem}_mapping.json"
     except Exception:
         pass
 
