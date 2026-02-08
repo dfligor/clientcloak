@@ -219,7 +219,6 @@ def cloak_document(
         metadata_report = inspect_metadata(output_path)
 
     # --- 6. Process comments ---
-    # Build content replacements for SANITIZE mode (same original -> placeholder).
     comment_author_mapping = process_comments(
         input_path=output_path,
         output_path=output_path,
@@ -232,11 +231,16 @@ def cloak_document(
         "party_a": config.party_a_label,
         "party_b": config.party_b_label,
     }
+    # process_comments returns {original_author: label}.
+    # MappingFile stores {label: original_author} (uncloaking direction).
+    comment_authors_for_mapping = {
+        label: original for original, label in comment_author_mapping.items()
+    } if comment_author_mapping else None
     mapping_file = create_mapping(
         original_file=input_path.name,
         mappings=mappings,
         party_labels=party_labels,
-        comment_authors=comment_author_mapping if comment_author_mapping else None,
+        comment_authors=comment_authors_for_mapping,
     )
     save_mapping(mapping_file, mapping_path)
     logger.info("Mapping file saved to %s.", mapping_path)

@@ -14,8 +14,8 @@ from enum import Enum
 # --- Enums ---
 
 class CommentMode(str, Enum):
+    KEEP = "keep"
     STRIP = "strip"
-    ANONYMIZE = "anonymize"
     SANITIZE = "sanitize"
 
 
@@ -122,7 +122,7 @@ class CloakConfig(BaseModel):
     party_a_aliases: list[PartyAlias] = []
     party_b_aliases: list[PartyAlias] = []
     additional_replacements: dict[str, str] = {}  # user-confirmed entity replacements
-    comment_mode: CommentMode = CommentMode.STRIP
+    comment_mode: CommentMode = CommentMode.SANITIZE
     strip_metadata: bool = True
     gliner_threshold: float = Field(default=0.5, ge=0, le=1)
 

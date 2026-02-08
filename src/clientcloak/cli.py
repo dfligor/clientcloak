@@ -431,9 +431,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     cloak_parser.add_argument(
         "--comment-mode",
-        choices=["strip", "anonymize", "sanitize"],
-        default="strip",
-        help="How to handle comments: strip, anonymize, or sanitize (default: strip)",
+        choices=["keep", "strip", "sanitize"],
+        default="sanitize",
+        help="How to handle comments: keep, strip, or sanitize (default: sanitize)",
     )
     cloak_parser.add_argument(
         "--no-strip-metadata",

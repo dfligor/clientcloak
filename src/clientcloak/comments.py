@@ -160,20 +160,20 @@ def process_comments(
     *output_path*, so ``input_path == output_path`` is safe.
 
     Modes:
+        **KEEP**
+            Leave comments completely untouched.
+
         **STRIP**
             Remove all ``<w:comment>`` elements from ``word/comments.xml``
             **and** remove ``commentRangeStart``, ``commentRangeEnd``, and
             ``commentReference`` markers from ``word/document.xml``.
 
-        **ANONYMIZE**
-            Replace the ``w:author`` and ``w:initials`` attributes on every
-            ``<w:comment>`` element.  If *author_mapping* is provided it is
-            used directly (original name -> replacement label); otherwise a
-            default mapping is generated ("Reviewer A", "Reviewer B", ...).
-
         **SANITIZE**
-            Anonymize (as above) **plus** apply *content_replacements* to the
-            text runs inside each comment.
+            Replace the ``w:author`` and ``w:initials`` attributes on every
+            ``<w:comment>`` element **and** apply *content_replacements* to
+            the text runs inside each comment.  If *author_mapping* is
+            provided it is used directly (original name -> replacement label);
+            otherwise a default mapping is generated ("Reviewer A", ...).
 
     Args:
         input_path: Path to the source .docx file.
@@ -208,24 +208,93 @@ def process_comments(
         for item in zin.infolist():
             raw = zin.read(item.filename)
 
-            if mode == CommentMode.STRIP:
+            if mode == CommentMode.KEEP:
+                pass  # Leave comments untouched
+
+            elif mode == CommentMode.STRIP:
                 if item.filename == "word/comments.xml":
                     raw = _strip_all_comments(raw)
                 elif item.filename == "word/document.xml":
                     raw = _strip_comment_references(raw)
 
-            elif mode in (CommentMode.ANONYMIZE, CommentMode.SANITIZE):
+            elif mode == CommentMode.SANITIZE:
                 if item.filename == "word/comments.xml":
                     raw, effective_mapping = _anonymize_comments(
                         raw,
                         author_mapping,
-                        content_replacements if mode == CommentMode.SANITIZE else {},
+                        content_replacements,
                     )
 
             zout.writestr(item, raw)
 
     output_path.write_bytes(buf.getvalue())
     return effective_mapping
+
+
+def restore_comment_authors(
+    input_path: Path,
+    output_path: Path,
+    author_mapping: dict[str, str],
+) -> None:
+    """
+    Restore original author names in comments during uncloaking.
+
+    Reads ``word/comments.xml`` from the ZIP and replaces anonymous labels
+    (e.g. "Reviewer A") back to the original author names using the mapping
+    from the mapping file.  Uses regex on raw XML to preserve namespace
+    prefixes.
+
+    Args:
+        input_path: Path to the cloaked .docx file.
+        output_path: Path for the restored .docx file.
+        author_mapping: Dict of ``anonymous_label -> original_author``
+            (as stored in the mapping file's ``comment_authors`` field).
+    """
+    if not author_mapping:
+        return
+
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+
+    input_bytes = input_path.read_bytes()
+
+    buf = BytesIO()
+    with zipfile.ZipFile(BytesIO(input_bytes), "r") as zin, \
+         zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+
+        for item in zin.infolist():
+            raw = zin.read(item.filename)
+
+            if item.filename == "word/comments.xml":
+                xml_str = raw.decode("utf-8")
+
+                # Reverse mapping: label -> original name
+                def _restore_attrs(match: re.Match) -> str:
+                    tag = match.group(0)
+                    author_match = re.search(r'w:author="([^"]*)"', tag)
+                    if author_match:
+                        label = author_match.group(1)
+                        if label in author_mapping:
+                            original_name = author_mapping[label]
+                            original_initials = generate_initials(original_name)
+                            tag = re.sub(
+                                r'w:author="[^"]*"',
+                                f'w:author="{original_name}"',
+                                tag,
+                            )
+                            tag = re.sub(
+                                r'w:initials="[^"]*"',
+                                f'w:initials="{original_initials}"',
+                                tag,
+                            )
+                    return tag
+
+                xml_str = re.sub(r"<w:comment\s[^>]*?>", _restore_attrs, xml_str)
+                raw = xml_str.encode("utf-8")
+
+            zout.writestr(item, raw)
+
+    output_path.write_bytes(buf.getvalue())
 
 
 def generate_initials(label: str) -> str:

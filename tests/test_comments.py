@@ -1,7 +1,7 @@
 """
 Tests for clientcloak.comments: inspect and process comments in .docx files.
 
-Covers STRIP, ANONYMIZE, and SANITIZE modes.
+Covers KEEP, STRIP, and SANITIZE modes, plus author restoration for uncloaking.
 """
 
 import zipfile
@@ -13,6 +13,7 @@ from clientcloak.comments import (
     generate_initials,
     inspect_comments,
     process_comments,
+    restore_comment_authors,
 )
 from clientcloak.models import CommentMode
 from tests.conftest import make_docx_with_comments
@@ -112,6 +113,33 @@ class TestInspectComments:
 
 
 # ===================================================================
+# process_comments: KEEP mode
+# ===================================================================
+
+class TestProcessCommentsKeep:
+    """Tests for process_comments() in KEEP mode."""
+
+    def test_keep_preserves_all_comments(self, tmp_path):
+        path = make_docx_with_comments(
+            tmp_path / "to_keep.docx",
+            "Agreement text.",
+            [
+                {"author": "Jane Smith", "initials": "JS", "text": "Comment one"},
+                {"author": "Bob Jones", "initials": "BJ", "text": "Comment two"},
+            ],
+        )
+        output_path = tmp_path / "kept.docx"
+        result = process_comments(path, output_path, CommentMode.KEEP)
+
+        assert result == {}  # KEEP returns empty mapping
+
+        # Verify comments are still there with original authors
+        authors = _get_comment_authors_from_xml(output_path)
+        assert "Jane Smith" in authors
+        assert "Bob Jones" in authors
+
+
+# ===================================================================
 # process_comments: STRIP mode
 # ===================================================================
 
@@ -141,23 +169,23 @@ class TestProcessCommentsStrip:
 
 
 # ===================================================================
-# process_comments: ANONYMIZE mode
+# process_comments: SANITIZE mode
 # ===================================================================
 
-class TestProcessCommentsAnonymize:
-    """Tests for process_comments() in ANONYMIZE mode."""
+class TestProcessCommentsSanitize:
+    """Tests for process_comments() in SANITIZE mode."""
 
-    def test_anonymize_replaces_authors(self, tmp_path):
+    def test_sanitize_replaces_authors(self, tmp_path):
         path = make_docx_with_comments(
-            tmp_path / "to_anon.docx",
+            tmp_path / "to_sanitize.docx",
             "Agreement text.",
             [
                 {"author": "Jane Smith", "initials": "JS", "text": "A comment"},
                 {"author": "Bob Jones", "initials": "BJ", "text": "Another"},
             ],
         )
-        output_path = tmp_path / "anon.docx"
-        mapping = process_comments(path, output_path, CommentMode.ANONYMIZE)
+        output_path = tmp_path / "sanitized.docx"
+        mapping = process_comments(path, output_path, CommentMode.SANITIZE)
 
         assert len(mapping) == 2
         assert "Jane Smith" in mapping
@@ -171,17 +199,17 @@ class TestProcessCommentsAnonymize:
         assert mapping["Jane Smith"] in authors
         assert mapping["Bob Jones"] in authors
 
-    def test_anonymize_with_explicit_mapping(self, tmp_path):
+    def test_sanitize_with_explicit_mapping(self, tmp_path):
         path = make_docx_with_comments(
             tmp_path / "explicit.docx",
             "Text.",
             [{"author": "Jane Smith", "initials": "JS", "text": "Comment"}],
         )
-        output_path = tmp_path / "anon_explicit.docx"
+        output_path = tmp_path / "sanitized_explicit.docx"
         mapping = process_comments(
             path,
             output_path,
-            CommentMode.ANONYMIZE,
+            CommentMode.SANITIZE,
             author_mapping={"Jane Smith": "Outside Counsel"},
         )
 
@@ -189,15 +217,7 @@ class TestProcessCommentsAnonymize:
         authors = _get_comment_authors_from_xml(output_path)
         assert "Outside Counsel" in authors
 
-
-# ===================================================================
-# process_comments: SANITIZE mode
-# ===================================================================
-
-class TestProcessCommentsSanitize:
-    """Tests for process_comments() in SANITIZE mode."""
-
-    def test_sanitize_replaces_author_and_content(self, tmp_path):
+    def test_sanitize_replaces_content(self, tmp_path):
         path = make_docx_with_comments(
             tmp_path / "to_sanitize.docx",
             "Agreement between Acme Corp and BigCo.",
@@ -226,3 +246,51 @@ class TestProcessCommentsSanitize:
         for t_el in root.iter(f"{{{ns_w}}}t"):
             if t_el.text:
                 assert "Acme Corp" not in t_el.text
+
+
+# ===================================================================
+# restore_comment_authors (uncloaking)
+# ===================================================================
+
+class TestRestoreCommentAuthors:
+    """Tests for restore_comment_authors()."""
+
+    def test_restore_reverses_anonymization(self, tmp_path):
+        # First, sanitize to anonymize authors
+        path = make_docx_with_comments(
+            tmp_path / "original.docx",
+            "Agreement text.",
+            [
+                {"author": "Jane Smith", "initials": "JS", "text": "A comment"},
+                {"author": "Bob Jones", "initials": "BJ", "text": "Another"},
+            ],
+        )
+        sanitized_path = tmp_path / "sanitized.docx"
+        mapping = process_comments(path, sanitized_path, CommentMode.SANITIZE)
+
+        # Verify authors are anonymized
+        authors = _get_comment_authors_from_xml(sanitized_path)
+        assert "Jane Smith" not in authors
+        assert "Bob Jones" not in authors
+
+        # Now restore
+        restored_path = tmp_path / "restored.docx"
+        # Invert the mapping: {original -> label} becomes {label -> original}
+        reverse_mapping = {label: original for original, label in mapping.items()}
+        restore_comment_authors(sanitized_path, restored_path, reverse_mapping)
+
+        # Verify original authors are back
+        restored_authors = _get_comment_authors_from_xml(restored_path)
+        assert "Jane Smith" in restored_authors
+        assert "Bob Jones" in restored_authors
+
+    def test_restore_no_op_with_empty_mapping(self, tmp_path):
+        path = make_docx_with_comments(
+            tmp_path / "original.docx",
+            "Text.",
+            [{"author": "Alice", "initials": "A", "text": "Comment"}],
+        )
+        # restore_comment_authors with empty mapping should be a no-op
+        # (it returns early without creating output)
+        restore_comment_authors(path, tmp_path / "output.docx", {})
+        assert not (tmp_path / "output.docx").exists()

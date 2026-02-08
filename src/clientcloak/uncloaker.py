@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from .comments import restore_comment_authors
 from .docx_handler import load_document, replace_text_in_document, save_document
 from .mapping import load_mapping
 
@@ -84,6 +85,12 @@ def uncloak_document(
 
     # --- 5. Save ---
     save_document(doc, output_path)
+
+    # --- 6. Restore comment authors ---
+    if mapping.comment_authors:
+        restore_comment_authors(output_path, output_path, mapping.comment_authors)
+        logger.info("Restored %d comment author(s).", len(mapping.comment_authors))
+
     logger.info("Uncloaked document saved to %s.", output_path)
 
     return replacement_count

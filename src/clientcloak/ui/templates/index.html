@@ -285,38 +285,38 @@
             <div class="bg-gray-50 rounded-xl p-5 mb-6">
                 <h3 class="text-sm font-semibold text-navy mb-3">How should we handle comments?</h3>
                 <div class="space-y-1">
+                    <div class="radio-option" @click="commentMode = 'sanitize'">
+                        <input type="radio" id="comment-sanitize" name="commentMode" value="sanitize"
+                               x-model="commentMode"
+                               aria-describedby="comment-sanitize-desc">
+                        <label for="comment-sanitize" class="flex-1">
+                            <span class="text-sm font-medium text-navy">Sanitize</span>
+                            <span id="comment-sanitize-desc" class="block text-xs text-gray-500">Anonymizes authors and replaces confidential information in comment text. Original names restored on uncloak.</span>
+                        </label>
+                    </div>
                     <div class="radio-option" @click="commentMode = 'strip'">
                         <input type="radio" id="comment-strip" name="commentMode" value="strip"
                                x-model="commentMode"
                                aria-describedby="comment-strip-desc">
                         <label for="comment-strip" class="flex-1">
                             <span class="text-sm font-medium text-navy">Remove all</span>
-                            <span id="comment-strip-desc" class="block text-xs text-gray-500">Safest option. Strips all comments entirely.</span>
+                            <span id="comment-strip-desc" class="block text-xs text-gray-500">Strips all comments entirely.</span>
                         </label>
                     </div>
-                    <div class="radio-option" @click="commentMode = 'anonymize'">
-                        <input type="radio" id="comment-anon" name="commentMode" value="anonymize"
+                    <div class="radio-option" @click="commentMode = 'keep'">
+                        <input type="radio" id="comment-keep" name="commentMode" value="keep"
                                x-model="commentMode"
-                               aria-describedby="comment-anon-desc">
-                        <label for="comment-anon" class="flex-1">
-                            <span class="text-sm font-medium text-navy">Anonymize authors</span>
-                            <span id="comment-anon-desc" class="block text-xs text-gray-500">Keeps comment text but replaces author names.</span>
-                        </label>
-                    </div>
-                    <div class="radio-option" @click="commentMode = 'sanitize'">
-                        <input type="radio" id="comment-sanitize" name="commentMode" value="sanitize"
-                               x-model="commentMode"
-                               aria-describedby="comment-sanitize-desc">
-                        <label for="comment-sanitize" class="flex-1">
-                            <span class="text-sm font-medium text-navy">Full cleanup</span>
-                            <span id="comment-sanitize-desc" class="block text-xs text-gray-500">Anonymizes authors and scrubs party names from comment text too.</span>
+                               aria-describedby="comment-keep-desc">
+                        <label for="comment-keep" class="flex-1">
+                            <span class="text-sm font-medium text-navy">Leave intact</span>
+                            <span id="comment-keep-desc" class="block text-xs text-gray-500">Keep comments as-is with real author names and text. Only use for local review.</span>
                         </label>
                     </div>
                 </div>
             </div>
 
             <!-- Comment Authors Preview -->
-            <template x-if="comments && comments.authors && comments.authors.length > 0">
+            <template x-if="commentMode === 'sanitize' && comments && comments.authors && comments.authors.length > 0">
                 <div class="bg-white border border-gray-200 rounded-xl p-4 mb-6">
                     <p class="text-xs font-medium text-gray-500 mb-2">
                         Comment authors found (<span x-text="comments.count"></span> comment<span x-text="comments.count !== 1 ? 's' : ''"></span>):
@@ -820,7 +820,7 @@ function clientCloak() {
         customReplacements: [],   // [{text: '', label: ''}]
         preambleText: null,
         showPreamble: false,
-        commentMode: 'strip',
+        commentMode: 'sanitize',
 
         // ---- Processing ----
         progressStage: 0,    // 0-4
@@ -984,12 +984,12 @@ function clientCloak() {
 
         commentModeSummary() {
             switch (this.commentMode) {
+                case 'sanitize':
+                    return 'Author names will be anonymized and confidential information in comment text will be replaced. Restored on uncloak.';
                 case 'strip':
                     return 'All comments will be removed.';
-                case 'anonymize':
-                    return 'Comments will be kept, but author names will be replaced with anonymous labels.';
-                case 'sanitize':
-                    return 'Author names will be anonymized, and party names in comment text will also be replaced.';
+                case 'keep':
+                    return 'Comments will be left as-is with real author names.';
                 default:
                     return '';
             }
@@ -1096,7 +1096,7 @@ function clientCloak() {
             this.customReplacements = [];
             this.preambleText = null;
             this.showPreamble = false;
-            this.commentMode = 'strip';
+            this.commentMode = 'sanitize';
             this.progressStage = 0;
             this.result = {};
             this.showPromptTips = false;
