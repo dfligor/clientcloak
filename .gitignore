@@ -1,0 +1,45 @@
+# Virtual environment
+venv/
+.venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+.installed.cfg
+
+# GLiNER / ONNX model files (auto-downloaded from HuggingFace)
+*.onnx
+
+# IDE settings
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# PyInstaller
+*.spec
+
+# CRITICAL: Mapping files contain real client names — never commit
+*_mapping.json
+mapping_*.json
+
+# Don't commit test documents with real client data
+tests/fixtures/real_*.docx
+
+# Internal planning docs (keep local, not in public repo)
+docs/
+Scratchpad.md

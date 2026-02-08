@@ -1,0 +1,228 @@
+"""
+Tests for clientcloak.comments: inspect and process comments in .docx files.
+
+Covers STRIP, ANONYMIZE, and SANITIZE modes.
+"""
+
+import zipfile
+import pytest
+from pathlib import Path
+from xml.etree import ElementTree as ET
+
+from clientcloak.comments import (
+    generate_initials,
+    inspect_comments,
+    process_comments,
+)
+from clientcloak.models import CommentMode
+from tests.conftest import make_docx_with_comments
+
+
+# ===================================================================
+# Helpers
+# ===================================================================
+
+def _read_comments_xml(docx_path: Path) -> ET.Element | None:
+    """Parse word/comments.xml from a .docx ZIP."""
+    with zipfile.ZipFile(docx_path, "r") as zf:
+        if "word/comments.xml" not in zf.namelist():
+            return None
+        return ET.fromstring(zf.read("word/comments.xml"))
+
+
+def _get_comment_authors_from_xml(docx_path: Path) -> list[str]:
+    """Extract all comment author names from the XML."""
+    root = _read_comments_xml(docx_path)
+    if root is None:
+        return []
+    ns_w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    return [
+        el.get(f"{{{ns_w}}}author", "")
+        for el in root.findall(f"{{{ns_w}}}comment")
+    ]
+
+
+# ===================================================================
+# generate_initials
+# ===================================================================
+
+class TestGenerateInitials:
+    """Tests for generate_initials()."""
+
+    @pytest.mark.parametrize(
+        "label, expected",
+        [
+            ("Reviewer A", "RA"),
+            ("Outside Counsel", "OC"),
+            ("John", "J"),
+            ("A B C", "ABC"),
+        ],
+    )
+    def test_generates_correct_initials(self, label, expected):
+        assert generate_initials(label) == expected
+
+
+# ===================================================================
+# inspect_comments
+# ===================================================================
+
+class TestInspectComments:
+    """Tests for inspect_comments()."""
+
+    def test_inspect_with_comments(self, tmp_path):
+        path = make_docx_with_comments(
+            tmp_path / "commented.docx",
+            "Agreement text.",
+            [
+                {"author": "Jane Smith", "initials": "JS", "text": "Review this clause"},
+                {"author": "Bob Jones", "initials": "BJ", "text": "Needs clarification"},
+                {"author": "Jane Smith", "initials": "JS", "text": "Another note"},
+            ],
+        )
+        comments, authors = inspect_comments(path)
+        assert len(comments) == 3
+        assert len(authors) == 2  # two unique authors
+
+        # Check author labels
+        assert authors[0].name == "Jane Smith"
+        assert authors[0].suggested_label == "Reviewer A"
+        assert authors[1].name == "Bob Jones"
+        assert authors[1].suggested_label == "Reviewer B"
+
+        # Check comment count per author
+        assert authors[0].comment_count == 2
+        assert authors[1].comment_count == 1
+
+    def test_inspect_without_comments(self, tmp_path):
+        from tests.conftest import make_simple_docx
+        path = make_simple_docx(tmp_path / "no_comments.docx", ["Text without comments"])
+        comments, authors = inspect_comments(path)
+        assert len(comments) == 0
+        assert len(authors) == 0
+
+    def test_comment_text_extraction(self, tmp_path):
+        path = make_docx_with_comments(
+            tmp_path / "text_check.docx",
+            "Body",
+            [{"author": "Alice", "initials": "A", "text": "Specific comment text here"}],
+        )
+        comments, _ = inspect_comments(path)
+        assert comments[0].text == "Specific comment text here"
+        assert comments[0].author == "Alice"
+
+
+# ===================================================================
+# process_comments: STRIP mode
+# ===================================================================
+
+class TestProcessCommentsStrip:
+    """Tests for process_comments() in STRIP mode."""
+
+    def test_strip_removes_all_comments(self, tmp_path):
+        path = make_docx_with_comments(
+            tmp_path / "to_strip.docx",
+            "Agreement text.",
+            [
+                {"author": "Jane", "initials": "J", "text": "Comment one"},
+                {"author": "Bob", "initials": "B", "text": "Comment two"},
+            ],
+        )
+        output_path = tmp_path / "stripped.docx"
+        result = process_comments(path, output_path, CommentMode.STRIP)
+
+        assert result == {}  # STRIP returns empty mapping
+
+        # Verify comments are gone
+        root = _read_comments_xml(output_path)
+        ns_w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        if root is not None:
+            comments = root.findall(f"{{{ns_w}}}comment")
+            assert len(comments) == 0
+
+
+# ===================================================================
+# process_comments: ANONYMIZE mode
+# ===================================================================
+
+class TestProcessCommentsAnonymize:
+    """Tests for process_comments() in ANONYMIZE mode."""
+
+    def test_anonymize_replaces_authors(self, tmp_path):
+        path = make_docx_with_comments(
+            tmp_path / "to_anon.docx",
+            "Agreement text.",
+            [
+                {"author": "Jane Smith", "initials": "JS", "text": "A comment"},
+                {"author": "Bob Jones", "initials": "BJ", "text": "Another"},
+            ],
+        )
+        output_path = tmp_path / "anon.docx"
+        mapping = process_comments(path, output_path, CommentMode.ANONYMIZE)
+
+        assert len(mapping) == 2
+        assert "Jane Smith" in mapping
+        assert "Bob Jones" in mapping
+
+        # Verify authors in the output are anonymized
+        authors = _get_comment_authors_from_xml(output_path)
+        assert "Jane Smith" not in authors
+        assert "Bob Jones" not in authors
+        # Should be Reviewer A, Reviewer B
+        assert mapping["Jane Smith"] in authors
+        assert mapping["Bob Jones"] in authors
+
+    def test_anonymize_with_explicit_mapping(self, tmp_path):
+        path = make_docx_with_comments(
+            tmp_path / "explicit.docx",
+            "Text.",
+            [{"author": "Jane Smith", "initials": "JS", "text": "Comment"}],
+        )
+        output_path = tmp_path / "anon_explicit.docx"
+        mapping = process_comments(
+            path,
+            output_path,
+            CommentMode.ANONYMIZE,
+            author_mapping={"Jane Smith": "Outside Counsel"},
+        )
+
+        assert mapping["Jane Smith"] == "Outside Counsel"
+        authors = _get_comment_authors_from_xml(output_path)
+        assert "Outside Counsel" in authors
+
+
+# ===================================================================
+# process_comments: SANITIZE mode
+# ===================================================================
+
+class TestProcessCommentsSanitize:
+    """Tests for process_comments() in SANITIZE mode."""
+
+    def test_sanitize_replaces_author_and_content(self, tmp_path):
+        path = make_docx_with_comments(
+            tmp_path / "to_sanitize.docx",
+            "Agreement between Acme Corp and BigCo.",
+            [
+                {
+                    "author": "Jane Smith",
+                    "initials": "JS",
+                    "text": "Acme Corp should review this clause",
+                },
+            ],
+        )
+        output_path = tmp_path / "sanitized.docx"
+        mapping = process_comments(
+            path,
+            output_path,
+            CommentMode.SANITIZE,
+            content_replacements={"Acme Corp": "[VENDOR]"},
+        )
+
+        # Author should be anonymized
+        assert "Jane Smith" in mapping
+
+        # Verify content replacement in comments XML
+        root = _read_comments_xml(output_path)
+        ns_w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        for t_el in root.iter(f"{{{ns_w}}}t"):
+            if t_el.text:
+                assert "Acme Corp" not in t_el.text

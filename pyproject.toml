@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clientcloak"
+version = "0.1.0"
+description = "Bidirectional document sanitization for safe AI contract review"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+keywords = ["legal", "contracts", "privacy", "ai", "document-processing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Legal Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "python-docx>=1.1.0",
+    "pydantic>=2.0",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.6",
+    "sse-starlette>=1.6.0",
+    "lxml>=5.0.0",
+    "structlog>=24.0",
+]
+
+[project.optional-dependencies]
+ner = [
+    "gliner>=0.2.5",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "httpx>=0.26.0",
+]
+desktop = [
+    "pywebview>=4.0",
+    "pyobjc>=10.0",
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+clientcloak = "clientcloak.cli:main"
+clientcloak-ui = "clientcloak.ui.app:start_server"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

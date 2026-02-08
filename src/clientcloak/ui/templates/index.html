@@ -1,0 +1,1237 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
+     x-data="clientCloak()"
+     x-init="init()">
+
+    <!-- ============================================================
+         Mode Toggle
+         ============================================================ -->
+    <div class="flex justify-center mb-8">
+        <div class="mode-toggle" role="tablist" aria-label="Mode selection">
+            <button role="tab"
+                    :aria-selected="mode === 'cloak'"
+                    :class="mode === 'cloak' ? 'active' : ''"
+                    @click="switchMode('cloak')"
+                    aria-controls="cloak-panel">
+                <span class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                    Cloak
+                </span>
+            </button>
+            <button role="tab"
+                    :aria-selected="mode === 'uncloak'"
+                    :class="mode === 'uncloak' ? 'active' : ''"
+                    @click="switchMode('uncloak')"
+                    aria-controls="uncloak-panel">
+                <span class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4" opacity="0.4"/></svg>
+                    Uncloak
+                </span>
+            </button>
+        </div>
+    </div>
+
+
+    <!-- ============================================================
+         CLOAK MODE
+         ============================================================ -->
+    <div x-show="mode === 'cloak'" id="cloak-panel" role="tabpanel">
+
+        <!-- ---- Step 1: Upload ---- -->
+        <div x-show="cloakStep === 1" class="step-enter">
+            <div class="text-center mb-6">
+                <h1 class="text-2xl font-bold text-navy mb-2">Protect the names in your document</h1>
+                <p class="text-gray-500">Replace real names with generic labels -- for AI review, working in public, creating templates, or sharing safely.</p>
+            </div>
+
+            <div class="drop-zone max-w-xl mx-auto p-10"
+                 :class="{'has-file': filename}"
+                 x-ref="cloakDropZone"
+                 @click="$refs.cloakFileInput.click()"
+                 role="button"
+                 tabindex="0"
+                 @keydown.enter="$refs.cloakFileInput.click()"
+                 @keydown.space.prevent="$refs.cloakFileInput.click()"
+                 aria-label="Upload document drop zone">
+
+                <input type="file"
+                       accept=".docx"
+                       class="hidden"
+                       x-ref="cloakFileInput"
+                       @change="handleCloakUpload($event.target.files[0])">
+
+                <div class="flex flex-col items-center gap-4 text-center">
+                    <template x-if="!filename && !uploading">
+                        <div class="flex flex-col items-center gap-3">
+                            <div class="w-16 h-16 rounded-2xl bg-navy/5 flex items-center justify-center">
+                                <svg class="w-8 h-8 text-navy/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-base font-medium text-navy">Drop your contract here or click to browse</p>
+                                <p class="text-sm text-gray-400 mt-1">.docx files only</p>
+                            </div>
+                        </div>
+                    </template>
+
+                    <template x-if="uploading">
+                        <div class="flex flex-col items-center gap-3">
+                            <div class="w-10 h-10 border-2 border-teal border-t-transparent rounded-full animate-spin" aria-hidden="true"></div>
+                            <p class="text-sm text-gray-500">Scanning your document...</p>
+                        </div>
+                    </template>
+
+                    <template x-if="filename && !uploading">
+                        <div class="flex flex-col items-center gap-2">
+                            <div class="flex items-center gap-2 text-success">
+                                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                <span class="font-medium" x-text="filename"></span>
+                            </div>
+                            <p class="text-xs text-gray-400">Uploaded successfully</p>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- ---- Step 1b: Security Findings ---- -->
+        <div x-show="cloakStep === 1.5" class="step-enter max-w-2xl mx-auto">
+            <div class="flex items-center gap-2 mb-2 text-success">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <span class="font-medium">Contract uploaded: <span x-text="filename"></span></span>
+            </div>
+            <hr class="my-5 border-gray-200">
+
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-6">
+                <div class="flex items-start gap-3">
+                    <svg class="w-5 h-5 text-warning flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    <div>
+                        <h2 class="font-semibold text-navy text-base">We found something you should check</h2>
+                        <p class="text-sm text-gray-600 mt-1">Review these findings before proceeding. Nothing has been changed yet.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-3 mb-6">
+                <template x-for="(finding, idx) in securityFindings" :key="idx">
+                    <div class="finding-card"
+                         :class="finding.threat_level">
+                        <div class="flex items-start gap-3">
+                            <span class="severity-dot mt-1.5"
+                                  :class="finding.threat_level"
+                                  :aria-label="finding.threat_level + ' severity'"></span>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-navy text-sm" x-text="finding.description"></p>
+                                <p class="text-xs text-gray-500 mt-1" x-text="finding.location"></p>
+                                <p x-show="finding.content_preview"
+                                   class="text-xs text-gray-400 mt-1.5 font-mono bg-gray-50 rounded px-2 py-1 truncate"
+                                   x-text="finding.content_preview"></p>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <div class="flex justify-center">
+                <button class="btn-primary"
+                        @click="cloakStep = 2"
+                        aria-label="Continue to naming parties">
+                    Continue
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+            </div>
+        </div>
+
+
+        <!-- ---- Step 2: Name the Parties ---- -->
+        <div x-show="cloakStep === 2" class="step-enter max-w-2xl mx-auto">
+            <div class="flex items-center gap-2 mb-2 text-success">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <span class="font-medium">Contract uploaded: <span x-text="filename"></span></span>
+            </div>
+            <hr class="my-5 border-gray-200">
+
+            <h2 class="text-xl font-bold text-navy mb-1">Who are the parties in this agreement?</h2>
+            <p class="text-sm text-gray-500 mb-6">We will replace their real names with bracketed labels like [Customer] and [Vendor].</p>
+
+            <!-- Party A -->
+            <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-3 items-center mb-4">
+                <div>
+                    <label for="partyA" class="block text-xs font-medium text-gray-500 mb-1">Real name</label>
+                    <input id="partyA"
+                           type="text"
+                           x-model="partyA"
+                           placeholder="e.g. Acme Corporation"
+                           class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
+                           autocomplete="off">
+                </div>
+                <div class="hidden sm:flex items-center justify-center text-gray-400 pt-5" aria-hidden="true">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+                <div>
+                    <label for="labelA" class="block text-xs font-medium text-gray-500 mb-1">Replace with</label>
+                    <template x-if="!labelACustom">
+                        <select id="labelA"
+                                x-model="labelA"
+                                @change="if(labelA === '__custom__') { labelA = ''; labelACustom = true; $nextTick(() => $refs.labelACustom.focus()); }"
+                                class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition bg-white">
+                            <option value="Customer">Customer</option>
+                            <option value="Vendor">Vendor</option>
+                            <option value="Licensor">Licensor</option>
+                            <option value="Licensee">Licensee</option>
+                            <option value="Buyer">Buyer</option>
+                            <option value="Seller">Seller</option>
+                            <option value="Provider">Provider</option>
+                            <option value="Client">Client</option>
+                            <option value="__custom__">Custom...</option>
+                        </select>
+                    </template>
+                    <template x-if="labelACustom">
+                        <input x-ref="labelACustom"
+                               type="text"
+                               x-model="labelA"
+                               @blur="if(!labelA) { labelA = 'Customer'; labelACustom = false; }"
+                               placeholder="Custom label"
+                               class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition">
+                    </template>
+                </div>
+            </div>
+
+            <!-- Party A Aliases -->
+            <div class="ml-4 pl-4 border-l-2 border-gray-200 mb-4">
+                <template x-for="(alias, idx) in aliasesA" :key="'aliasA-'+idx">
+                    <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_auto] gap-3 items-center mb-2">
+                        <div>
+                            <label :for="'aliasAName'+idx" class="block text-xs font-medium text-gray-400 mb-1">Alias name</label>
+                            <input :id="'aliasAName'+idx"
+                                   type="text"
+                                   x-model="alias.name"
+                                   placeholder="e.g. Acme"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
+                                   autocomplete="off">
+                        </div>
+                        <div class="hidden sm:flex items-center justify-center text-gray-400 pt-5" aria-hidden="true">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </div>
+                        <div>
+                            <label :for="'aliasALabel'+idx" class="block text-xs font-medium text-gray-400 mb-1">Replace with</label>
+                            <input :id="'aliasALabel'+idx"
+                                   type="text"
+                                   x-model="alias.label"
+                                   placeholder="e.g. Vendor"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
+                                   autocomplete="off">
+                        </div>
+                        <button class="text-gray-400 hover:text-red-500 transition-colors pt-5"
+                                @click="removeAliasA(idx)"
+                                type="button"
+                                aria-label="Remove alias">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
+                </template>
+                <button class="text-xs text-teal-600 hover:text-teal-800 font-medium transition-colors"
+                        @click="addAliasA()"
+                        type="button">+ Add alias</button>
+            </div>
+
+            <!-- Party B -->
+            <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-3 items-center mb-5">
+                <div>
+                    <label for="partyB" class="block text-xs font-medium text-gray-500 mb-1">Real name</label>
+                    <input id="partyB"
+                           type="text"
+                           x-model="partyB"
+                           placeholder="e.g. BigCo LLC"
+                           class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
+                           autocomplete="off">
+                </div>
+                <div class="hidden sm:flex items-center justify-center text-gray-400 pt-5" aria-hidden="true">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+                <div>
+                    <label for="labelB" class="block text-xs font-medium text-gray-500 mb-1">Replace with</label>
+                    <template x-if="!labelBCustom">
+                        <select id="labelB"
+                                x-model="labelB"
+                                @change="if(labelB === '__custom__') { labelB = ''; labelBCustom = true; $nextTick(() => $refs.labelBCustom.focus()); }"
+                                class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition bg-white">
+                            <option value="Customer">Customer</option>
+                            <option value="Vendor">Vendor</option>
+                            <option value="Licensor">Licensor</option>
+                            <option value="Licensee">Licensee</option>
+                            <option value="Buyer">Buyer</option>
+                            <option value="Seller">Seller</option>
+                            <option value="Provider">Provider</option>
+                            <option value="Client">Client</option>
+                            <option value="__custom__">Custom...</option>
+                        </select>
+                    </template>
+                    <template x-if="labelBCustom">
+                        <input x-ref="labelBCustom"
+                               type="text"
+                               x-model="labelB"
+                               @blur="if(!labelB) { labelB = 'Vendor'; labelBCustom = false; }"
+                               placeholder="Custom label"
+                               class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition">
+                    </template>
+                </div>
+            </div>
+
+            <!-- Party B Aliases -->
+            <div class="ml-4 pl-4 border-l-2 border-gray-200 mb-5">
+                <template x-for="(alias, idx) in aliasesB" :key="'aliasB-'+idx">
+                    <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_auto] gap-3 items-center mb-2">
+                        <div>
+                            <label :for="'aliasBName'+idx" class="block text-xs font-medium text-gray-400 mb-1">Alias name</label>
+                            <input :id="'aliasBName'+idx"
+                                   type="text"
+                                   x-model="alias.name"
+                                   placeholder="e.g. BigCo"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
+                                   autocomplete="off">
+                        </div>
+                        <div class="hidden sm:flex items-center justify-center text-gray-400 pt-5" aria-hidden="true">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </div>
+                        <div>
+                            <label :for="'aliasBLabel'+idx" class="block text-xs font-medium text-gray-400 mb-1">Replace with</label>
+                            <input :id="'aliasBLabel'+idx"
+                                   type="text"
+                                   x-model="alias.label"
+                                   placeholder="e.g. Customer"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition"
+                                   autocomplete="off">
+                        </div>
+                        <button class="text-gray-400 hover:text-red-500 transition-colors pt-5"
+                                @click="removeAliasB(idx)"
+                                type="button"
+                                aria-label="Remove alias">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
+                </template>
+                <button class="text-xs text-teal-600 hover:text-teal-800 font-medium transition-colors"
+                        @click="addAliasB()"
+                        type="button">+ Add alias</button>
+            </div>
+
+            <!-- Quick-Pick Chips -->
+            <div class="mb-6">
+                <p class="text-xs text-gray-400 mb-2">Quick pick:</p>
+                <div class="flex flex-wrap gap-2">
+                    <button class="chip"
+                            :class="{'selected': labelA === 'Customer' && labelB === 'Vendor'}"
+                            @click="applyQuickPick('Customer', 'Vendor')"
+                            type="button">Customer / Vendor</button>
+                    <button class="chip"
+                            :class="{'selected': labelA === 'Licensor' && labelB === 'Licensee'}"
+                            @click="applyQuickPick('Licensor', 'Licensee')"
+                            type="button">Licensor / Licensee</button>
+                    <button class="chip"
+                            :class="{'selected': labelA === 'Buyer' && labelB === 'Seller'}"
+                            @click="applyQuickPick('Buyer', 'Seller')"
+                            type="button">Buyer / Seller</button>
+                    <button class="chip"
+                            :class="{'selected': labelA === 'Provider' && labelB === 'Client'}"
+                            @click="applyQuickPick('Provider', 'Client')"
+                            type="button">Provider / Client</button>
+                </div>
+            </div>
+
+            <!-- Comment Handling -->
+            <div class="bg-gray-50 rounded-xl p-5 mb-6">
+                <h3 class="text-sm font-semibold text-navy mb-3">How should we handle comments?</h3>
+                <div class="space-y-1">
+                    <div class="radio-option" @click="commentMode = 'strip'">
+                        <input type="radio" id="comment-strip" name="commentMode" value="strip"
+                               x-model="commentMode"
+                               aria-describedby="comment-strip-desc">
+                        <label for="comment-strip" class="flex-1">
+                            <span class="text-sm font-medium text-navy">Remove all</span>
+                            <span id="comment-strip-desc" class="block text-xs text-gray-500">Safest option. Strips all comments entirely.</span>
+                        </label>
+                    </div>
+                    <div class="radio-option" @click="commentMode = 'anonymize'">
+                        <input type="radio" id="comment-anon" name="commentMode" value="anonymize"
+                               x-model="commentMode"
+                               aria-describedby="comment-anon-desc">
+                        <label for="comment-anon" class="flex-1">
+                            <span class="text-sm font-medium text-navy">Anonymize authors</span>
+                            <span id="comment-anon-desc" class="block text-xs text-gray-500">Keeps comment text but replaces author names.</span>
+                        </label>
+                    </div>
+                    <div class="radio-option" @click="commentMode = 'sanitize'">
+                        <input type="radio" id="comment-sanitize" name="commentMode" value="sanitize"
+                               x-model="commentMode"
+                               aria-describedby="comment-sanitize-desc">
+                        <label for="comment-sanitize" class="flex-1">
+                            <span class="text-sm font-medium text-navy">Full cleanup</span>
+                            <span id="comment-sanitize-desc" class="block text-xs text-gray-500">Anonymizes authors and scrubs party names from comment text too.</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Comment Authors Preview -->
+            <template x-if="comments && comments.authors && comments.authors.length > 0">
+                <div class="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+                    <p class="text-xs font-medium text-gray-500 mb-2">
+                        Comment authors found (<span x-text="comments.count"></span> comment<span x-text="comments.count !== 1 ? 's' : ''"></span>):
+                    </p>
+                    <div class="space-y-1">
+                        <template x-for="(author, idx) in comments.authors" :key="idx">
+                            <p class="text-sm text-gray-700">
+                                <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="author.name"></span>
+                                <span class="text-gray-400 mx-1">&rarr;</span>
+                                <span class="text-teal-700 font-medium" x-text="author.suggested_label"></span>
+                                <span class="text-gray-400 text-xs" x-text="'(' + author.comment_count + ')'"></span>
+                            </p>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+            <div class="flex justify-center">
+                <button class="btn-primary"
+                        :disabled="!partyA.trim() || !partyB.trim()"
+                        @click="goToPreview()"
+                        aria-label="Continue to preview">
+                    Continue
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+            </div>
+        </div>
+
+
+        <!-- ---- Step 3: Preview & Confirm ---- -->
+        <div x-show="cloakStep === 3" class="step-enter max-w-2xl mx-auto">
+            <h2 class="text-xl font-bold text-navy mb-1">Ready to cloak</h2>
+            <p class="text-sm text-gray-500 mb-5">Here is what we will protect. Review it, then hit the button below.</p>
+
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden mb-6">
+                <!-- What we'll protect -->
+                <div class="p-5 border-b border-gray-100">
+                    <div class="flex items-center gap-2 mb-3">
+                        <svg class="w-5 h-5 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                        <h3 class="text-sm font-semibold text-navy">What we will protect</h3>
+                    </div>
+                    <div class="space-y-1.5 preview-scroll max-h-48 overflow-y-auto">
+                        <div class="summary-item" x-show="partyA.trim()">
+                            <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="partyA"></span>
+                            <span class="arrow">&rarr;</span>
+                            <span class="text-teal-700 font-medium text-sm" x-text="'[' + labelA + ']'"></span>
+                        </div>
+                        <template x-for="(alias, idx) in aliasesA.filter(a => a.name.trim() && a.label.trim())" :key="'previewA-'+idx">
+                            <div class="summary-item ml-4 pl-4 border-l-2 border-gray-200">
+                                <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="alias.name"></span>
+                                <span class="arrow">&rarr;</span>
+                                <span class="text-teal-700 font-medium text-sm" x-text="'[' + alias.label + ']'"></span>
+                            </div>
+                        </template>
+                        <div class="summary-item" x-show="partyB.trim()">
+                            <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="partyB"></span>
+                            <span class="arrow">&rarr;</span>
+                            <span class="text-teal-700 font-medium text-sm" x-text="'[' + labelB + ']'"></span>
+                        </div>
+                        <template x-for="(alias, idx) in aliasesB.filter(a => a.name.trim() && a.label.trim())" :key="'previewB-'+idx">
+                            <div class="summary-item ml-4 pl-4 border-l-2 border-gray-200">
+                                <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="alias.name"></span>
+                                <span class="arrow">&rarr;</span>
+                                <span class="text-teal-700 font-medium text-sm" x-text="'[' + alias.label + ']'"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- What we'll remove (metadata) -->
+                <div class="p-5 border-b border-gray-100" x-show="metadata && (metadata.author || metadata.company || metadata.last_modified_by || metadata.revision)">
+                    <div class="flex items-center gap-2 mb-3">
+                        <svg class="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+                        </svg>
+                        <h3 class="text-sm font-semibold text-navy">What we will remove</h3>
+                    </div>
+                    <div class="space-y-1 text-sm text-gray-600">
+                        <p x-show="metadata.author">
+                            <span class="text-gray-400 inline-block w-28">Author:</span>
+                            <span class="font-mono text-xs" x-text="metadata.author"></span>
+                        </p>
+                        <p x-show="metadata.company">
+                            <span class="text-gray-400 inline-block w-28">Company:</span>
+                            <span class="font-mono text-xs" x-text="metadata.company"></span>
+                        </p>
+                        <p x-show="metadata.last_modified_by">
+                            <span class="text-gray-400 inline-block w-28">Last edited by:</span>
+                            <span class="font-mono text-xs" x-text="metadata.last_modified_by"></span>
+                        </p>
+                        <p x-show="metadata.revision">
+                            <span class="text-gray-400 inline-block w-28">Edit history:</span>
+                            <span class="font-mono text-xs" x-text="metadata.revision + ' revision(s)'"></span>
+                        </p>
+                        <p x-show="metadata.created || metadata.modified" class="text-gray-400 text-xs mt-1">
+                            Created/modified timestamps will be cleared.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Comment handling summary -->
+                <div class="p-5">
+                    <div class="flex items-center gap-2 mb-2">
+                        <svg class="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                        </svg>
+                        <h3 class="text-sm font-semibold text-navy">Comments</h3>
+                    </div>
+                    <p class="text-sm text-gray-600" x-text="commentModeSummary()"></p>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-center gap-3">
+                <button class="btn-secondary"
+                        @click="cloakStep = 2"
+                        type="button">
+                    Back
+                </button>
+                <button class="btn-primary btn-teal"
+                        @click="executeCloaking()"
+                        :disabled="processing"
+                        aria-label="Cloak document">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                    Cloak Document
+                </button>
+            </div>
+        </div>
+
+
+        <!-- ---- Step 3b: Processing ---- -->
+        <div x-show="cloakStep === 3.5" class="step-enter max-w-md mx-auto text-center py-8">
+            <div class="mb-6">
+                <svg class="w-16 h-16 mx-auto text-teal lock-icon-processing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0110 0v4"/>
+                </svg>
+            </div>
+
+            <h2 class="text-lg font-bold text-navy mb-1">Cloaking your document...</h2>
+            <p class="text-sm text-gray-500 mb-8">This usually takes just a few seconds.</p>
+
+            <ul class="progress-checklist text-left max-w-xs mx-auto mb-8" role="list" aria-label="Processing progress">
+                <li :class="progressStage >= 1 ? 'completed' : (progressStage === 0 ? 'active' : 'pending')">
+                    <span class="status-check" :class="progressStage >= 1 ? 'done' : (progressStage === 0 ? 'active' : 'waiting')" aria-hidden="true"></span>
+                    Replacing party names
+                </li>
+                <li :class="progressStage >= 2 ? 'completed' : (progressStage === 1 ? 'active' : 'pending')">
+                    <span class="status-check" :class="progressStage >= 2 ? 'done' : (progressStage === 1 ? 'active' : 'waiting')" aria-hidden="true"></span>
+                    Scrubbing file info
+                </li>
+                <li :class="progressStage >= 3 ? 'completed' : (progressStage === 2 ? 'active' : 'pending')">
+                    <span class="status-check" :class="progressStage >= 3 ? 'done' : (progressStage === 2 ? 'active' : 'waiting')" aria-hidden="true"></span>
+                    Cleaning comments
+                </li>
+                <li :class="progressStage >= 4 ? 'completed' : (progressStage === 3 ? 'active' : 'pending')">
+                    <span class="status-check" :class="progressStage >= 4 ? 'done' : (progressStage === 3 ? 'active' : 'waiting')" aria-hidden="true"></span>
+                    Finalizing
+                </li>
+            </ul>
+
+            <p class="flex items-center justify-center gap-2 text-xs text-gray-400">
+                <svg class="w-3.5 h-3.5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                Your files never leave your computer.
+            </p>
+        </div>
+
+
+        <!-- ---- Step 4: Success ---- -->
+        <div x-show="cloakStep === 4" class="step-enter max-w-2xl mx-auto text-center">
+            <div class="mb-2">
+                <svg class="w-12 h-12 mx-auto text-success lock-icon-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+            </div>
+            <h2 class="text-xl font-bold text-navy mb-1">Document cloaked</h2>
+            <p class="text-sm text-gray-500 mb-8">All real names have been replaced. Your document is ready to share safely.</p>
+
+            <!-- Download Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                <div class="download-card">
+                    <div class="mb-4">
+                        <svg class="w-10 h-10 mx-auto text-navy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0110 0v4"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-base font-semibold text-navy mb-1">Cloaked Document</h3>
+                    <p class="text-xs text-gray-500 mb-4">Safe to share, upload to AI, or work on in public.</p>
+                    <button class="btn-primary w-full justify-center"
+                            @click="downloadCloakedDoc()"
+                            aria-label="Download cloaked document">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Download
+                    </button>
+                </div>
+
+                <div class="download-card">
+                    <div class="mb-4">
+                        <svg class="w-10 h-10 mx-auto text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-base font-semibold text-navy mb-1">Mapping Key</h3>
+                    <p class="text-xs text-gray-500 mb-4">Keep this private. You will need it to restore the real names.</p>
+                    <button class="btn-primary btn-teal w-full justify-center"
+                            @click="downloadMappingFile()"
+                            aria-label="Download mapping key">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Download
+                    </button>
+                </div>
+            </div>
+
+            <hr class="my-6 border-gray-200">
+
+            <!-- Next Steps -->
+            <div class="text-left mb-6">
+                <h3 class="text-sm font-semibold text-navy mb-3">What you can do with it:</h3>
+                <ul class="space-y-2 text-sm text-gray-600">
+                    <li class="flex items-start gap-2">
+                        <span class="text-teal mt-0.5 flex-shrink-0">&#x2022;</span>
+                        <span><strong>AI review</strong> -- Upload to Claude, ChatGPT, or any AI tool for redlining, analysis, or drafting</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-teal mt-0.5 flex-shrink-0">&#x2022;</span>
+                        <span><strong>Work in public</strong> -- Review on a plane, coffee shop, or shared screen without exposing client names</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-teal mt-0.5 flex-shrink-0">&#x2022;</span>
+                        <span><strong>Create a template</strong> -- Share the cloaked version firm-wide or publicly as a reusable form</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-teal mt-0.5 flex-shrink-0">&#x2022;</span>
+                        <span><strong>Restore later</strong> -- Come back anytime with the mapping key to put the real names back</span>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Prompting Tips (collapsible) -->
+            <div class="text-left mb-8">
+                <button class="expand-trigger flex items-center gap-2 text-sm font-medium text-navy hover:text-teal-700 transition-colors"
+                        @click="showPromptTips = !showPromptTips"
+                        :aria-expanded="showPromptTips"
+                        aria-controls="prompt-tips">
+                    <svg class="w-4 h-4 transition-transform duration-200" :class="showPromptTips ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                    Prompting tips
+                </button>
+                <div id="prompt-tips"
+                     x-show="showPromptTips"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 -translate-y-2"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     x-transition:leave="transition ease-in duration-150"
+                     x-transition:leave-start="opacity-100 translate-y-0"
+                     x-transition:leave-end="opacity-0 -translate-y-2"
+                     class="mt-3 space-y-3">
+                    <p class="text-xs text-gray-500">If you are using an AI tool, start with one of these prompts:</p>
+
+                    <div class="bg-gray-50 rounded-lg p-4 relative group">
+                        <p class="text-xs font-semibold text-navy mb-1">Redline Review</p>
+                        <p class="text-sm text-gray-700 font-mono leading-relaxed pr-16"
+                           x-text="'Review this agreement from [' + labelA + ']\'s perspective. Suggest edits to better protect [' + labelA + ']\'s interests. Explain your reasoning for each change.'"></p>
+                        <button class="absolute top-3 right-3 btn-secondary text-xs py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                                @click="copyPrompt('Review this agreement from [' + labelA + ']\'s perspective. Suggest edits to better protect [' + labelA + ']\'s interests. Explain your reasoning for each change.')"
+                                aria-label="Copy redline review prompt">Copy</button>
+                    </div>
+
+                    <div class="bg-gray-50 rounded-lg p-4 relative group">
+                        <p class="text-xs font-semibold text-navy mb-1">Consistency Check</p>
+                        <p class="text-sm text-gray-700 font-mono leading-relaxed pr-16">Check this agreement for internal consistency. Flag any defined terms used inconsistently, conflicting provisions, or missing cross-references.</p>
+                        <button class="absolute top-3 right-3 btn-secondary text-xs py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                                @click="copyPrompt('Check this agreement for internal consistency. Flag any defined terms used inconsistently, conflicting provisions, or missing cross-references.')"
+                                aria-label="Copy consistency check prompt">Copy</button>
+                    </div>
+
+                    <div class="bg-gray-50 rounded-lg p-4 relative group">
+                        <p class="text-xs font-semibold text-navy mb-1">Issue Spotting</p>
+                        <p class="text-sm text-gray-700 font-mono leading-relaxed pr-16"
+                           x-text="'Identify the top 5 risks for [' + labelA + '] in this agreement. For each risk, suggest protective language or negotiation points.'"></p>
+                        <button class="absolute top-3 right-3 btn-secondary text-xs py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                                @click="copyPrompt('Identify the top 5 risks for [' + labelA + '] in this agreement. For each risk, suggest protective language or negotiation points.')"
+                                aria-label="Copy issue spotting prompt">Copy</button>
+                    </div>
+
+                    <p class="text-xs text-gray-500 italic">
+                        Tip: After the first pass, try iterating &mdash;
+                        "Now focus on the indemnification section" or
+                        "Add a limitation of liability clause."
+                    </p>
+                </div>
+            </div>
+
+            <hr class="my-6 border-gray-200">
+
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button class="btn-primary"
+                        @click="switchMode('uncloak')"
+                        aria-label="Switch to uncloak mode">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4" opacity="0.4"/></svg>
+                    Uncloak a Document
+                </button>
+                <button class="btn-secondary"
+                        @click="resetCloak()"
+                        type="button">
+                    Cloak Another
+                </button>
+            </div>
+        </div>
+
+    </div><!-- /cloak-panel -->
+
+
+    <!-- ============================================================
+         UNCLOAK MODE
+         ============================================================ -->
+    <div x-show="mode === 'uncloak'" id="uncloak-panel" role="tabpanel">
+
+        <!-- ---- Step 1: Upload Two Files ---- -->
+        <div x-show="uncloakStep === 1" class="step-enter">
+            <div class="text-center mb-6">
+                <h1 class="text-2xl font-bold text-navy mb-2">Restore the real names</h1>
+                <p class="text-gray-500">Upload a cloaked document along with its mapping key, and we will put the real names back.</p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto mb-8">
+                <!-- Redlined Doc -->
+                <div class="drop-zone p-8"
+                     :class="{'has-file': uncloakRedlinedFile}"
+                     x-ref="uncloakDocDropZone"
+                     @click="$refs.uncloakDocInput.click()"
+                     role="button"
+                     tabindex="0"
+                     @keydown.enter="$refs.uncloakDocInput.click()"
+                     @keydown.space.prevent="$refs.uncloakDocInput.click()"
+                     aria-label="Upload AI output document">
+
+                    <input type="file"
+                           accept=".docx"
+                           class="hidden"
+                           x-ref="uncloakDocInput"
+                           @change="handleUncloakDocUpload($event.target.files[0])">
+
+                    <div class="flex flex-col items-center gap-3 text-center">
+                        <template x-if="!uncloakRedlinedFile">
+                            <div class="flex flex-col items-center gap-2">
+                                <svg class="w-10 h-10 text-navy/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                </svg>
+                                <div>
+                                    <p class="text-sm font-medium text-navy">AI's Output</p>
+                                    <p class="text-xs text-gray-400 mt-0.5">Drop a cloaked or redlined .docx</p>
+                                </div>
+                            </div>
+                        </template>
+                        <template x-if="uncloakRedlinedFile">
+                            <div class="flex flex-col items-center gap-1">
+                                <svg class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                <p class="text-sm font-medium text-navy truncate max-w-full" x-text="uncloakRedlinedFile.name"></p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Mapping File -->
+                <div class="drop-zone p-8"
+                     :class="{'has-file': uncloakMappingFile}"
+                     x-ref="uncloakMapDropZone"
+                     @click="$refs.uncloakMapInput.click()"
+                     role="button"
+                     tabindex="0"
+                     @keydown.enter="$refs.uncloakMapInput.click()"
+                     @keydown.space.prevent="$refs.uncloakMapInput.click()"
+                     aria-label="Upload mapping key file">
+
+                    <input type="file"
+                           accept=".json"
+                           class="hidden"
+                           x-ref="uncloakMapInput"
+                           @change="handleUncloakMapUpload($event.target.files[0])">
+
+                    <div class="flex flex-col items-center gap-3 text-center">
+                        <template x-if="!uncloakMappingFile">
+                            <div class="flex flex-col items-center gap-2">
+                                <svg class="w-10 h-10 text-teal/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+                                </svg>
+                                <div>
+                                    <p class="text-sm font-medium text-navy">Mapping Key</p>
+                                    <p class="text-xs text-gray-400 mt-0.5">Drop the .json file you saved earlier</p>
+                                </div>
+                            </div>
+                        </template>
+                        <template x-if="uncloakMappingFile">
+                            <div class="flex flex-col items-center gap-1">
+                                <svg class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                <p class="text-sm font-medium text-navy truncate max-w-full" x-text="uncloakMappingFile.name"></p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-center">
+                <button class="btn-primary"
+                        :disabled="!uncloakRedlinedFile || !uncloakMappingFile || processing"
+                        @click="executeUncloaking()"
+                        aria-label="Restore original names">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4" opacity="0.4"/></svg>
+                    Restore Document
+                </button>
+            </div>
+        </div>
+
+
+        <!-- ---- Step 2: Processing ---- -->
+        <div x-show="uncloakStep === 2 && processing" class="step-enter max-w-md mx-auto text-center py-8">
+            <div class="mb-6">
+                <svg class="w-16 h-16 mx-auto text-teal lock-icon-processing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0110 0v4" opacity="0.4"/>
+                </svg>
+            </div>
+            <h2 class="text-lg font-bold text-navy mb-1">Restoring original names...</h2>
+            <p class="text-sm text-gray-500">This usually takes just a moment.</p>
+        </div>
+
+        <!-- ---- Step 2: Success ---- -->
+        <div x-show="uncloakStep === 2 && !processing" class="step-enter max-w-lg mx-auto text-center">
+            <div class="mb-2">
+                <svg class="w-12 h-12 mx-auto text-success lock-icon-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+            </div>
+            <h2 class="text-xl font-bold text-navy mb-1">Document uncloaked</h2>
+            <p class="text-sm text-gray-500 mb-2">The real names are back where they belong.</p>
+            <p x-show="uncloakResult && uncloakResult.replacements_restored"
+               class="text-sm text-teal-700 font-medium mb-8">
+                <span x-text="uncloakResult.replacements_restored"></span> replacement<span x-text="uncloakResult.replacements_restored !== 1 ? 's' : ''"></span> restored.
+            </p>
+
+            <div class="download-card max-w-xs mx-auto mb-8">
+                <div class="mb-4">
+                    <svg class="w-10 h-10 mx-auto text-navy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                </div>
+                <h3 class="text-base font-semibold text-navy mb-1">Final Document</h3>
+                <p class="text-xs text-gray-500 mb-4">Real names restored to their original places.</p>
+                <button class="btn-primary w-full justify-center"
+                        @click="downloadUncloakedDoc()"
+                        aria-label="Download final document">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download
+                </button>
+            </div>
+
+            <button class="btn-secondary"
+                    @click="resetAll(); switchMode('cloak')"
+                    type="button">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                Cloak Another
+            </button>
+        </div>
+
+    </div><!-- /uncloak-panel -->
+
+</div><!-- /alpine root -->
+
+
+<!-- ============================================================
+     Alpine.js Component Definition
+     ============================================================ -->
+<script>
+function clientCloak() {
+    return {
+        // ---- Core State ----
+        mode: 'cloak',
+        cloakStep: 1,        // 1, 1.5, 2, 3, 3.5, 4
+        uncloakStep: 1,      // 1, 2
+
+        // ---- Session ----
+        sessionId: null,
+        filename: null,
+
+        // ---- Upload ----
+        uploading: false,
+        processing: false,
+
+        // ---- Security ----
+        securityFindings: [],
+
+        // ---- Metadata & Comments ----
+        metadata: {},
+        comments: {},
+
+        // ---- Party Config ----
+        partyA: '',
+        partyB: '',
+        labelA: 'Customer',
+        labelB: 'Vendor',
+        labelACustom: false,
+        labelBCustom: false,
+        aliasesA: [],
+        aliasesB: [],
+        commentMode: 'strip',
+
+        // ---- Processing ----
+        progressStage: 0,    // 0-4
+
+        // ---- Results ----
+        result: {},
+        showPromptTips: false,
+
+        // ---- Uncloak ----
+        uncloakRedlinedFile: null,
+        uncloakMappingFile: null,
+        uncloakResult: null,
+
+
+        // ==========================
+        // Initialization
+        // ==========================
+
+        init() {
+            this.$nextTick(() => {
+                this.setupDropZones();
+            });
+
+            // Restore last-used labels from localStorage
+            try {
+                const saved = localStorage.getItem('clientcloak_labels');
+                if (saved) {
+                    const labels = JSON.parse(saved);
+                    if (labels.labelA) this.labelA = labels.labelA;
+                    if (labels.labelB) this.labelB = labels.labelB;
+                }
+            } catch (e) { /* ignore */ }
+        },
+
+        setupDropZones() {
+            const cloakDZ = this.$refs.cloakDropZone;
+            if (cloakDZ) {
+                initDropZone(cloakDZ, (file) => this.handleCloakUpload(file), ['.docx']);
+            }
+            const uncloakDocDZ = this.$refs.uncloakDocDropZone;
+            if (uncloakDocDZ) {
+                initDropZone(uncloakDocDZ, (file) => this.handleUncloakDocUpload(file), ['.docx']);
+            }
+            const uncloakMapDZ = this.$refs.uncloakMapDropZone;
+            if (uncloakMapDZ) {
+                initDropZone(uncloakMapDZ, (file) => this.handleUncloakMapUpload(file), ['.json']);
+            }
+        },
+
+
+        // ==========================
+        // Mode Switching
+        // ==========================
+
+        switchMode(m) {
+            this.mode = m;
+            this.$nextTick(() => this.setupDropZones());
+        },
+
+
+        // ==========================
+        // Cloak: Upload
+        // ==========================
+
+        async handleCloakUpload(file) {
+            if (!file) return;
+            this.uploading = true;
+            try {
+                const data = await uploadFile(file);
+                this.sessionId = data.session_id;
+                this.filename = data.filename;
+                this.securityFindings = data.security_findings || [];
+                this.metadata = data.metadata || {};
+                this.comments = data.comments || {};
+
+                if (this.securityFindings.length > 0) {
+                    this.cloakStep = 1.5;
+                } else {
+                    this.cloakStep = 2;
+                }
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                this.uploading = false;
+            }
+        },
+
+
+        // ==========================
+        // Cloak: Party Config
+        // ==========================
+
+        applyQuickPick(a, b) {
+            this.labelA = a;
+            this.labelB = b;
+            this.labelACustom = false;
+            this.labelBCustom = false;
+        },
+
+        addAliasA() { this.aliasesA.push({ name: '', label: '' }); },
+        removeAliasA(idx) { this.aliasesA.splice(idx, 1); },
+        addAliasB() { this.aliasesB.push({ name: '', label: '' }); },
+        removeAliasB(idx) { this.aliasesB.splice(idx, 1); },
+
+        goToPreview() {
+            if (!this.partyA.trim() || !this.partyB.trim()) return;
+
+            // Save labels for next session
+            try {
+                localStorage.setItem('clientcloak_labels', JSON.stringify({
+                    labelA: this.labelA,
+                    labelB: this.labelB,
+                }));
+            } catch (e) { /* ignore */ }
+
+            this.cloakStep = 3;
+        },
+
+        commentModeSummary() {
+            switch (this.commentMode) {
+                case 'strip':
+                    return 'All comments will be removed.';
+                case 'anonymize':
+                    return 'Comments will be kept, but author names will be replaced with anonymous labels.';
+                case 'sanitize':
+                    return 'Author names will be anonymized, and party names in comment text will also be replaced.';
+                default:
+                    return '';
+            }
+        },
+
+
+        // ==========================
+        // Cloak: Execute
+        // ==========================
+
+        async executeCloaking() {
+            this.processing = true;
+            this.progressStage = 0;
+            this.cloakStep = 3.5;
+
+            // Advance progress indicators on a timer for visual feedback.
+            // The real work happens in the API call below.
+            const timers = [];
+            timers.push(setTimeout(() => { this.progressStage = 1; }, 400));
+            timers.push(setTimeout(() => { this.progressStage = 2; }, 900));
+            timers.push(setTimeout(() => { this.progressStage = 3; }, 1400));
+
+            try {
+                // Build FormData inline so alias support doesn't depend on
+                // a potentially cached app.js.
+                const form = new FormData();
+                form.append('session_id', this.sessionId);
+                form.append('party_a', this.partyA);
+                form.append('party_b', this.partyB);
+                form.append('party_a_label', this.labelA);
+                form.append('party_b_label', this.labelB);
+                form.append('comment_mode', this.commentMode);
+                form.append('strip_metadata', 'true');
+                const filteredA = this.aliasesA.filter(a => a.name.trim() && a.label.trim());
+                const filteredB = this.aliasesB.filter(a => a.name.trim() && a.label.trim());
+                if (filteredA.length > 0) {
+                    form.append('party_a_aliases', JSON.stringify(filteredA));
+                }
+                if (filteredB.length > 0) {
+                    form.append('party_b_aliases', JSON.stringify(filteredB));
+                }
+                const res = await fetch('/api/cloak', { method: 'POST', body: form });
+                if (!res.ok) {
+                    const err = await safeJson(res);
+                    throw new Error(err.detail || 'Cloaking failed. Please try again.');
+                }
+                const data = await res.json();
+
+                this.result = data;
+
+                // Clear any remaining timers and mark all done
+                timers.forEach(clearTimeout);
+                this.progressStage = 4;
+
+                // Brief pause so the user sees the final checkmark
+                await new Promise(resolve => setTimeout(resolve, 600));
+
+                this.cloakStep = 4;
+            } catch (err) {
+                timers.forEach(clearTimeout);
+                showToast(err.message, 'error');
+                this.cloakStep = 3;
+            } finally {
+                this.processing = false;
+            }
+        },
+
+
+        // ==========================
+        // Cloak: Downloads
+        // ==========================
+
+        downloadCloakedDoc() {
+            if (!this.result || !this.result.download_url) {
+                showToast('Download not available. Please try cloaking again.', 'error');
+                return;
+            }
+            const name = this.filename
+                ? this.filename.replace('.docx', '_cloaked.docx')
+                : 'cloaked_document.docx';
+            downloadFile(this.result.download_url, name);
+        },
+
+        downloadMappingFile() {
+            if (!this.result || !this.result.mapping_url) {
+                showToast('Download not available. Please try cloaking again.', 'error');
+                return;
+            }
+            const name = this.filename
+                ? this.filename.replace('.docx', '_mapping.json')
+                : 'mapping.json';
+            downloadFile(this.result.mapping_url, name);
+        },
+
+
+        // ==========================
+        // Cloak: Reset
+        // ==========================
+
+        resetCloak() {
+            this.cloakStep = 1;
+            this.sessionId = null;
+            this.filename = null;
+            this.uploading = false;
+            this.securityFindings = [];
+            this.metadata = {};
+            this.comments = {};
+            this.partyA = '';
+            this.partyB = '';
+            this.aliasesA = [];
+            this.aliasesB = [];
+            this.commentMode = 'strip';
+            this.progressStage = 0;
+            this.result = {};
+            this.showPromptTips = false;
+
+            this.$nextTick(() => this.setupDropZones());
+        },
+
+
+        // ==========================
+        // Uncloak: Upload
+        // ==========================
+
+        handleUncloakDocUpload(file) {
+            if (!file) return;
+            try {
+                validateDocxFile(file);
+                this.uncloakRedlinedFile = file;
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        },
+
+        handleUncloakMapUpload(file) {
+            if (!file) return;
+            try {
+                validateJsonFile(file);
+                this.uncloakMappingFile = file;
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        },
+
+
+        // ==========================
+        // Uncloak: Execute
+        // ==========================
+
+        async executeUncloaking() {
+            if (!this.uncloakRedlinedFile || !this.uncloakMappingFile) return;
+
+            this.processing = true;
+            this.uncloakStep = 2;
+
+            try {
+                const data = await uncloakDocument(
+                    this.uncloakRedlinedFile,
+                    this.uncloakMappingFile
+                );
+                this.uncloakResult = data;
+            } catch (err) {
+                showToast(err.message, 'error');
+                this.uncloakStep = 1;
+            } finally {
+                this.processing = false;
+            }
+        },
+
+
+        // ==========================
+        // Uncloak: Download
+        // ==========================
+
+        downloadUncloakedDoc() {
+            if (!this.uncloakResult || !this.uncloakResult.download_url) {
+                showToast('Download not available. Please try again.', 'error');
+                return;
+            }
+            const name = this.uncloakRedlinedFile
+                ? this.uncloakRedlinedFile.name.replace('.docx', '_uncloaked.docx')
+                : 'uncloaked_document.docx';
+            downloadFile(this.uncloakResult.download_url, name);
+        },
+
+
+        // ==========================
+        // Full Reset
+        // ==========================
+
+        resetAll() {
+            this.resetCloak();
+            this.uncloakStep = 1;
+            this.uncloakRedlinedFile = null;
+            this.uncloakMappingFile = null;
+            this.uncloakResult = null;
+        },
+
+
+        // ==========================
+        // Utility
+        // ==========================
+
+        async copyPrompt(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('Prompt copied to clipboard.', 'success', 2000);
+            } catch (e) {
+                showToast('Could not copy. Please select and copy manually.', 'error');
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

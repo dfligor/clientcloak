@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClientCloak</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        navy: {
+                            DEFAULT: '#1a1a2e',
+                            50: '#e8e8ed',
+                            100: '#d1d1db',
+                            200: '#a3a3b7',
+                            300: '#757593',
+                            400: '#47476f',
+                            500: '#1a1a2e',
+                            600: '#151525',
+                            700: '#10101c',
+                            800: '#0b0b13',
+                            900: '#06060a',
+                        },
+                        teal: {
+                            DEFAULT: '#00d9ff',
+                            50: '#e6fbff',
+                            100: '#b3f3ff',
+                            200: '#80ecff',
+                            300: '#4de4ff',
+                            400: '#1addff',
+                            500: '#00d9ff',
+                            600: '#00aecc',
+                            700: '#008299',
+                            800: '#005766',
+                            900: '#002b33',
+                        },
+                        success: '#4ade80',
+                        warning: '#fbbf24',
+                        danger: '#ef4444',
+                        offwhite: '#fafafa',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Menlo', 'monospace'],
+                    },
+                    animation: {
+                        'lock-pulse': 'lockPulse 2s ease-in-out infinite',
+                        'lock-spin': 'lockSpin 1.5s linear infinite',
+                        'slide-in': 'slideIn 0.4s ease-out',
+                        'fade-in': 'fadeIn 0.3s ease-out',
+                        'check-pop': 'checkPop 0.3s ease-out',
+                    },
+                    keyframes: {
+                        lockPulse: {
+                            '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+                            '50%': { opacity: '0.7', transform: 'scale(1.05)' },
+                        },
+                        lockSpin: {
+                            '0%': { transform: 'rotate(0deg)' },
+                            '100%': { transform: 'rotate(360deg)' },
+                        },
+                        slideIn: {
+                            '0%': { opacity: '0', transform: 'translateY(16px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        checkPop: {
+                            '0%': { transform: 'scale(0)' },
+                            '70%': { transform: 'scale(1.2)' },
+                            '100%': { transform: 'scale(1)' },
+                        },
+                    },
+                },
+            },
+        }
+    </script>
+
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- Inter font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="h-full bg-offwhite font-sans text-navy antialiased">
+
+    <!-- Navigation -->
+    <nav class="bg-navy text-white shadow-lg">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Branding -->
+                <a href="/" class="flex items-center gap-2.5 group" aria-label="ClientCloak home">
+                    <svg class="w-7 h-7 text-teal transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0110 0v4"/>
+                    </svg>
+                    <span class="text-xl font-bold tracking-tight">
+                        Client<span class="text-teal">Cloak</span>
+                    </span>
+                </a>
+
+                <!-- Tagline (hidden on small screens) -->
+                <p class="hidden sm:block text-sm text-navy-200 font-medium">
+                    Your client secrets stay secret.
+                </p>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-1">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="mt-auto py-6 border-t border-gray-200">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <p class="flex items-center gap-2 text-sm text-gray-500">
+                    <svg class="w-4 h-4 text-success flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                    Your files never leave your computer.
+                </p>
+                <p class="text-xs text-gray-400">
+                    ClientCloak &mdash; No login. No cloud. No tracking.
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- App JS -->
+    <script src="/static/app.js"></script>
+</body>
+</html>

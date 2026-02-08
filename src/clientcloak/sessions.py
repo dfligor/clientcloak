@@ -1,0 +1,127 @@
+"""
+Session persistence with automatic TTL cleanup for ClientCloak.
+
+Adapted from PlaybookRedliner's app/sessions.py pattern. Each cloaking
+operation gets its own session directory that holds uploaded files, mapping
+files, and cloaked output. Sessions auto-expire after 24 hours to prevent
+unbounded disk growth.
+
+Session IDs are 8-character UUID prefixes -- short enough for URLs and
+log messages, long enough to avoid collisions in practice.
+"""
+
+import shutil
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from .paths import get_sessions_dir
+
+SESSION_TTL = timedelta(hours=24)
+_TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
+
+
+def create_session() -> str:
+    """
+    Create a new session directory and return its ID.
+
+    The session directory is created under the platform-appropriate sessions
+    root (see ``paths.get_sessions_dir``). A ``.created`` file is written
+    inside the directory containing an ISO-8601 UTC timestamp that is later
+    used by ``cleanup_expired_sessions`` to determine age.
+
+    Returns:
+        An 8-character hexadecimal session ID.
+    """
+    session_id = uuid.uuid4().hex[:8]
+    session_dir = get_sessions_dir() / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    created_file = session_dir / ".created"
+    timestamp = datetime.now(timezone.utc).strftime(_TIMESTAMP_FORMAT)
+    created_file.write_text(timestamp, encoding="utf-8")
+
+    return session_id
+
+
+def get_session_dir(session_id: str) -> Path:
+    """
+    Return the directory path for an existing session.
+
+    Args:
+        session_id: The 8-character session identifier returned by
+            ``create_session``.
+
+    Returns:
+        The ``Path`` to the session directory.
+
+    Raises:
+        ValueError: If no session directory exists for the given ID.
+    """
+    session_dir = get_sessions_dir() / session_id
+    if not session_dir.is_dir():
+        raise ValueError(f"Session not found: {session_id}")
+    return session_dir
+
+
+def get_session_file(session_id: str, filename: str) -> Path:
+    """
+    Get the path to a specific file within a session directory.
+
+    This does **not** check whether the file itself exists -- only that the
+    session directory is valid. Callers can use the returned path for both
+    reading existing files and writing new ones.
+
+    Args:
+        session_id: The 8-character session identifier.
+        filename: The name of the file within the session directory.
+
+    Returns:
+        The ``Path`` to the requested file inside the session directory.
+
+    Raises:
+        ValueError: If the session directory does not exist (delegated to
+            ``get_session_dir``).
+    """
+    return get_session_dir(session_id) / filename
+
+
+def cleanup_expired_sessions() -> int:
+    """
+    Remove session directories that are older than the TTL (24 hours).
+
+    Iterates over all directories in the sessions root and reads each
+    ``.created`` timestamp file. Sessions whose age exceeds ``SESSION_TTL``
+    are removed entirely. Sessions without a readable ``.created`` file are
+    treated as expired and removed as well, since their age cannot be
+    verified.
+
+    Returns:
+        The number of session directories that were removed.
+    """
+    sessions_root = get_sessions_dir()
+    now = datetime.now(timezone.utc)
+    removed = 0
+
+    for entry in sessions_root.iterdir():
+        if not entry.is_dir():
+            continue
+
+        created_file = entry / ".created"
+        expired = True  # default to expired if we can't read the timestamp
+
+        if created_file.is_file():
+            try:
+                raw = created_file.read_text(encoding="utf-8").strip()
+                created_at = datetime.strptime(raw, _TIMESTAMP_FORMAT)
+                if (now - created_at) < SESSION_TTL:
+                    expired = False
+            except (ValueError, OSError):
+                # Unparseable or unreadable -- treat as expired
+                pass
+
+        if expired:
+            shutil.rmtree(entry, ignore_errors=True)
+            removed += 1
+
+    return removed
