@@ -237,15 +237,9 @@ def preview_entities(
     """
     Preview entities detected in a document before cloaking.
 
-    This is a Phase 2 feature (GLiNER integration). Currently returns an
-    empty list as a stub.
-
-    When implemented, this will:
-        1. Extract all text from the document via :func:`extract_all_text`.
-        2. Run GLiNER entity detection on the extracted text.
-        3. Filter out entities that match the configured party names (since
-           those are already covered by explicit config).
-        4. Return the remaining detected entities with suggested placeholders.
+    Extracts all text from the document, runs entity detection (regex and,
+    when available, GLiNER), and filters out entities that match the
+    configured party names.
 
     Args:
         input_path: Path to the .docx file to scan for entities.
@@ -253,11 +247,23 @@ def preview_entities(
             GLiNER confidence threshold.
 
     Returns:
-        A list of :class:`DetectedEntity` instances. Currently always empty.
+        A list of :class:`DetectedEntity` instances sorted by count.
     """
-    # Phase 2: GLiNER entity detection will go here.
-    # Stub implementation — load the document to validate the path, but
-    # return an empty list until the detection model is integrated.
-    _ = load_document(input_path)
-    _ = config  # will use party names and gliner_threshold in Phase 2
-    return []
+    from .detector import detect_entities
+
+    doc = load_document(input_path)
+    text_fragments = extract_all_text(doc)
+    full_text = "\n".join(text for text, _source in text_fragments)
+
+    # Collect all party names (primary + aliases) for filtering
+    party_names: list[str] = [config.party_a_name, config.party_b_name]
+    for alias in config.party_a_aliases:
+        party_names.append(alias.name)
+    for alias in config.party_b_aliases:
+        party_names.append(alias.name)
+
+    return detect_entities(
+        text=full_text,
+        party_names=party_names,
+        gliner_threshold=config.gliner_threshold,
+    )

@@ -12,7 +12,7 @@ import structlog
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
-from ...cloaker import cloak_document, sanitize_filename
+from ...cloaker import cloak_document, preview_entities, sanitize_filename
 from ...comments import inspect_comments
 from ...docx_handler import load_document
 from ...metadata import inspect_metadata
@@ -113,6 +113,66 @@ async def upload_document(file: UploadFile = File(...)):
     })
 
 
+@router.post("/detect-entities")
+async def detect_entities(
+    session_id: str = Form(...),
+    party_a: str = Form(""),
+    party_b: str = Form(""),
+    party_a_aliases: str = Form("[]"),
+    party_b_aliases: str = Form("[]"),
+):
+    """
+    Detect structured PII entities in a previously uploaded document.
+
+    Returns a JSON list of detected entities with type, count, and
+    suggested placeholders. Party names are filtered out since they
+    are already handled by explicit party configuration.
+    """
+    # --- Validate session ---
+    try:
+        session_dir = get_session_dir(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+    upload_path = session_dir / "original.docx"
+    if not upload_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="No uploaded file found in this session. Please upload a file first.",
+        )
+
+    # --- Parse aliases ---
+    try:
+        parsed_a_aliases = [PartyAlias(**a) for a in json.loads(party_a_aliases)]
+        parsed_b_aliases = [PartyAlias(**a) for a in json.loads(party_b_aliases)]
+    except Exception as exc:
+        logger.warning("Failed to parse aliases for detection", error=str(exc))
+        parsed_a_aliases = []
+        parsed_b_aliases = []
+
+    # --- Build minimal config for detection ---
+    config = CloakConfig(
+        party_a_name=party_a or "UNUSED_PARTY_A",
+        party_b_name=party_b or "UNUSED_PARTY_B",
+        party_a_aliases=parsed_a_aliases,
+        party_b_aliases=parsed_b_aliases,
+    )
+
+    # --- Run detection ---
+    try:
+        entities = preview_entities(upload_path, config)
+        logger.info(
+            "Entity detection complete",
+            session_id=session_id,
+            entities_found=len(entities),
+        )
+    except Exception as exc:
+        logger.error("Entity detection failed", session_id=session_id, error=str(exc))
+        raise HTTPException(status_code=500, detail=f"Entity detection failed: {exc}") from exc
+
+    return JSONResponse(content=[e.model_dump() for e in entities])
+
+
 @router.post("/cloak")
 async def cloak(
     session_id: str = Form(...),
@@ -124,6 +184,7 @@ async def cloak(
     strip_metadata: bool = Form(True),
     party_a_aliases: str = Form("[]"),
     party_b_aliases: str = Form("[]"),
+    additional_replacements: str = Form("{}"),
 ):
     """
     Run the cloaking pipeline on a previously uploaded document.
@@ -167,6 +228,14 @@ async def cloak(
     logger.info("Aliases parsed", party_a_count=len(parsed_a_aliases),
                 party_b_count=len(parsed_b_aliases))
 
+    # --- Parse additional replacements (entity detections) ---
+    try:
+        parsed_additional = json.loads(additional_replacements)
+        if not isinstance(parsed_additional, dict):
+            parsed_additional = {}
+    except (json.JSONDecodeError, TypeError):
+        parsed_additional = {}
+
     # --- Build config ---
     config = CloakConfig(
         party_a_name=party_a,
@@ -175,6 +244,7 @@ async def cloak(
         party_b_label=party_b_label,
         party_a_aliases=parsed_a_aliases,
         party_b_aliases=parsed_b_aliases,
+        additional_replacements=parsed_additional,
         comment_mode=comment_mode_enum,
         strip_metadata=strip_metadata,
     )

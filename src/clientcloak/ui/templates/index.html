@@ -378,6 +378,97 @@
         </div>
 
 
+        <!-- ---- Step 2.5: Entity Review ---- -->
+        <div x-show="cloakStep === 2.5" class="step-enter max-w-2xl mx-auto">
+            <div class="flex items-center gap-2 mb-2 text-success">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <span class="font-medium">Contract uploaded: <span x-text="filename"></span></span>
+            </div>
+            <hr class="my-5 border-gray-200">
+
+            <!-- Loading state -->
+            <template x-if="detecting">
+                <div class="text-center py-8">
+                    <div class="w-10 h-10 border-2 border-teal border-t-transparent rounded-full animate-spin mx-auto mb-3" aria-hidden="true"></div>
+                    <p class="text-sm text-gray-500">Scanning for sensitive data...</p>
+                </div>
+            </template>
+
+            <!-- Results -->
+            <template x-if="!detecting && detectedEntities.length > 0">
+                <div>
+                    <h2 class="text-xl font-bold text-navy mb-1">We found some sensitive data</h2>
+                    <p class="text-sm text-gray-500 mb-5">These items were detected in your document. Checked items will be replaced with generic placeholders.</p>
+
+                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden mb-6">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-50 border-b border-gray-200">
+                                <tr>
+                                    <th class="w-10 px-4 py-2.5"></th>
+                                    <th class="text-left px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Found</th>
+                                    <th class="text-left px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Type</th>
+                                    <th class="text-center px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Count</th>
+                                    <th class="text-left px-3 py-2.5 font-medium text-gray-500 text-xs uppercase tracking-wide">Replace with</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                <template x-for="(entity, idx) in detectedEntities" :key="idx">
+                                    <tr class="hover:bg-gray-50/50 transition-colors">
+                                        <td class="px-4 py-2.5">
+                                            <input type="checkbox"
+                                                   :checked="selectedEntities[entity.text]"
+                                                   @change="selectedEntities[entity.text] = $event.target.checked"
+                                                   class="rounded border-gray-300 text-teal focus:ring-teal/30"
+                                                   :aria-label="'Include ' + entity.text">
+                                        </td>
+                                        <td class="px-3 py-2.5">
+                                            <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="entity.text"></span>
+                                        </td>
+                                        <td class="px-3 py-2.5">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                                                  :class="{
+                                                      'bg-blue-50 text-blue-700': entity.entity_type === 'EMAIL',
+                                                      'bg-green-50 text-green-700': entity.entity_type === 'PHONE',
+                                                      'bg-red-50 text-red-700': entity.entity_type === 'SSN',
+                                                      'bg-amber-50 text-amber-700': entity.entity_type === 'AMOUNT',
+                                                      'bg-purple-50 text-purple-700': entity.entity_type === 'EIN',
+                                                      'bg-gray-100 text-gray-700': !['EMAIL','PHONE','SSN','AMOUNT','EIN'].includes(entity.entity_type),
+                                                  }"
+                                                  x-text="entity.entity_type"></span>
+                                        </td>
+                                        <td class="px-3 py-2.5 text-center text-gray-500" x-text="entity.count"></td>
+                                        <td class="px-3 py-2.5">
+                                            <span class="text-teal-700 font-medium text-sm" x-text="entity.suggested_placeholder"></span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="flex items-center justify-center gap-3">
+                        <button class="btn-secondary"
+                                @click="cloakStep = 2"
+                                type="button">
+                            Back
+                        </button>
+                        <button class="btn-secondary"
+                                @click="selectedEntities = {}; goFromEntities()"
+                                type="button">
+                            Skip
+                        </button>
+                        <button class="btn-primary"
+                                @click="goFromEntities()"
+                                aria-label="Continue to preview">
+                            Continue
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+
         <!-- ---- Step 3: Preview & Confirm ---- -->
         <div x-show="cloakStep === 3" class="step-enter max-w-2xl mx-auto">
             <h2 class="text-xl font-bold text-navy mb-1">Ready to cloak</h2>
@@ -413,6 +504,13 @@
                                 <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="alias.name"></span>
                                 <span class="arrow">&rarr;</span>
                                 <span class="text-teal-700 font-medium text-sm" x-text="'[' + alias.label + ']'"></span>
+                            </div>
+                        </template>
+                        <template x-for="(entity, idx) in detectedEntities.filter(e => selectedEntities[e.text])" :key="'previewEntity-'+idx">
+                            <div class="summary-item">
+                                <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded" x-text="entity.text"></span>
+                                <span class="arrow">&rarr;</span>
+                                <span class="text-teal-700 font-medium text-sm" x-text="entity.suggested_placeholder"></span>
                             </div>
                         </template>
                     </div>
@@ -463,7 +561,7 @@
 
             <div class="flex items-center justify-center gap-3">
                 <button class="btn-secondary"
-                        @click="cloakStep = 2"
+                        @click="cloakStep = detectedEntities.length > 0 ? 2.5 : 2"
                         type="button">
                     Back
                 </button>
@@ -830,7 +928,7 @@ function clientCloak() {
     return {
         // ---- Core State ----
         mode: 'cloak',
-        cloakStep: 1,        // 1, 1.5, 2, 3, 3.5, 4
+        cloakStep: 1,        // 1, 1.5, 2, 2.5, 3, 3.5, 4
         uncloakStep: 1,      // 1, 2
 
         // ---- Session ----
@@ -857,6 +955,11 @@ function clientCloak() {
         aliasesA: [],
         aliasesB: [],
         commentMode: 'strip',
+
+        // ---- Entity Detection ----
+        detectedEntities: [],
+        selectedEntities: {},  // entity text -> boolean
+        detecting: false,
 
         // ---- Processing ----
         progressStage: 0,    // 0-4
@@ -970,7 +1073,69 @@ function clientCloak() {
                 }));
             } catch (e) { /* ignore */ }
 
+            // Run entity detection (step 2.5)
+            this.runEntityDetection();
+        },
+
+        async runEntityDetection() {
+            this.detecting = true;
+            this.detectedEntities = [];
+            this.selectedEntities = {};
+            this.cloakStep = 2.5;
+
+            try {
+                const form = new FormData();
+                form.append('session_id', this.sessionId);
+                form.append('party_a', this.partyA);
+                form.append('party_b', this.partyB);
+                const filteredA = this.aliasesA.filter(a => a.name.trim() && a.label.trim());
+                const filteredB = this.aliasesB.filter(a => a.name.trim() && a.label.trim());
+                if (filteredA.length > 0) {
+                    form.append('party_a_aliases', JSON.stringify(filteredA));
+                }
+                if (filteredB.length > 0) {
+                    form.append('party_b_aliases', JSON.stringify(filteredB));
+                }
+
+                const res = await fetch('/api/detect-entities', { method: 'POST', body: form });
+                if (!res.ok) {
+                    const err = await safeJson(res);
+                    throw new Error(err.detail || 'Entity detection failed.');
+                }
+                const entities = await res.json();
+                this.detectedEntities = entities;
+
+                // Check all entities by default
+                for (const entity of entities) {
+                    this.selectedEntities[entity.text] = true;
+                }
+
+                // Auto-advance if no entities found
+                if (entities.length === 0) {
+                    this.cloakStep = 3;
+                }
+            } catch (err) {
+                showToast(err.message, 'error');
+                // Still advance to step 3 on error — entity detection is optional
+                this.cloakStep = 3;
+            } finally {
+                this.detecting = false;
+            }
+        },
+
+        goFromEntities() {
             this.cloakStep = 3;
+        },
+
+        buildAdditionalReplacements() {
+            // Build placeholder -> original dict from selected entities
+            const replacements = {};
+            for (const entity of this.detectedEntities) {
+                if (this.selectedEntities[entity.text]) {
+                    replacements[entity.suggested_placeholder] = entity.text;
+                }
+            }
+            return replacements;
         },
 
         commentModeSummary() {
@@ -1021,6 +1186,10 @@ function clientCloak() {
                 }
                 if (filteredB.length > 0) {
                     form.append('party_b_aliases', JSON.stringify(filteredB));
+                }
+                const additionalReplacements = this.buildAdditionalReplacements();
+                if (Object.keys(additionalReplacements).length > 0) {
+                    form.append('additional_replacements', JSON.stringify(additionalReplacements));
                 }
                 const res = await fetch('/api/cloak', { method: 'POST', body: form });
                 if (!res.ok) {
@@ -1093,6 +1262,9 @@ function clientCloak() {
             this.aliasesA = [];
             this.aliasesB = [];
             this.commentMode = 'strip';
+            this.detectedEntities = [];
+            this.selectedEntities = {};
+            this.detecting = false;
             this.progressStage = 0;
             this.result = {};
             this.showPromptTips = false;

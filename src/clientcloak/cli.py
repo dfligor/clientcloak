@@ -187,7 +187,7 @@ def _parse_aliases(raw: list[str]) -> list[PartyAlias]:
 
 def _handle_cloak(args: argparse.Namespace) -> int:
     """Handle the 'cloak' subcommand."""
-    from .cloaker import cloak_document
+    from .cloaker import cloak_document, preview_entities
 
     input_path = Path(args.input)
     output_path = Path(args.output) if args.output else _default_output_path(input_path, "cloaked")
@@ -225,6 +225,19 @@ def _handle_cloak(args: argparse.Namespace) -> int:
     for alias in config.party_b_aliases:
         print(f"    {alias.name} -> [{alias.label}]")
     print()
+
+    # --- Entity detection ---
+    if not args.no_detect:
+        entities = preview_entities(input_path, config)
+        if entities:
+            _print_header("Detected Entities")
+            for entity in entities:
+                print(f"  {entity.text:<30s} {entity.entity_type:<8s} (x{entity.count}) -> {entity.suggested_placeholder}")
+                config.additional_replacements[entity.suggested_placeholder] = entity.text
+            print()
+            print(f"  {_dim(f'{len(entities)} entity(ies) will be replaced.')}")
+            print(f"  {_dim('Use --no-detect to skip entity detection.')}")
+            print()
 
     result: CloakResult = cloak_document(input_path, output_path, mapping_path, config)
 
@@ -433,6 +446,12 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.5,
         help="GLiNER confidence threshold, 0-1 (default: 0.5, for future use)",
+    )
+    cloak_parser.add_argument(
+        "--no-detect",
+        action="store_true",
+        default=False,
+        help="Skip automatic entity detection (emails, phones, SSNs, etc.)",
     )
     cloak_parser.add_argument(
         "--alias-a",
