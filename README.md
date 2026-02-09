@@ -106,3 +106,11 @@ The mapping file contains the link between placeholders and real client data. Ke
 ## License
 
 MIT
+
+## Contact
+
+For questions, support, or feedback: [mailto:info@makingreign.com](./mailto:info@makingreign.com)
+
+---
+
+Created and maintained by Making Reign Inc.
