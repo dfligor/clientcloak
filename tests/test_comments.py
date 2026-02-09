@@ -247,6 +247,65 @@ class TestProcessCommentsSanitize:
             if t_el.text:
                 assert "Acme Corp" not in t_el.text
 
+    def test_sanitize_content_case_insensitive(self, tmp_path):
+        """Content replacements should match regardless of case."""
+        path = make_docx_with_comments(
+            tmp_path / "case.docx",
+            "Body text.",
+            [
+                {
+                    "author": "Jane",
+                    "initials": "J",
+                    "text": "ACME CORP should review this",
+                },
+            ],
+        )
+        output_path = tmp_path / "sanitized_case.docx"
+        process_comments(
+            path,
+            output_path,
+            CommentMode.SANITIZE,
+            content_replacements={"Acme Corp": "[VENDOR]"},
+        )
+
+        root = _read_comments_xml(output_path)
+        ns_w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        texts = [t.text for t in root.iter(f"{{{ns_w}}}t") if t.text]
+        full_text = " ".join(texts)
+        assert "ACME" not in full_text.upper() or "[VENDOR]" in full_text
+
+    def test_sanitize_content_longest_first(self, tmp_path):
+        """Longer originals should be matched before shorter substrings."""
+        path = make_docx_with_comments(
+            tmp_path / "longest.docx",
+            "Body text.",
+            [
+                {
+                    "author": "Jane",
+                    "initials": "J",
+                    "text": "Contact Acme Corporation for details",
+                },
+            ],
+        )
+        output_path = tmp_path / "sanitized_longest.docx"
+        process_comments(
+            path,
+            output_path,
+            CommentMode.SANITIZE,
+            content_replacements={
+                "Acme Corporation": "[VENDOR]",
+                "Acme": "[VENDOR-SHORT]",
+            },
+        )
+
+        root = _read_comments_xml(output_path)
+        ns_w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        texts = [t.text for t in root.iter(f"{{{ns_w}}}t") if t.text]
+        full_text = " ".join(texts)
+        assert "[VENDOR]" in full_text
+        # Should not have matched the shorter variant
+        assert "[VENDOR-SHORT]" not in full_text
+
 
 # ===================================================================
 # restore_comment_authors (uncloaking)

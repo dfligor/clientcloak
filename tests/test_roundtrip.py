@@ -9,7 +9,7 @@ import pytest
 from pathlib import Path
 from docx import Document
 
-from clientcloak.cloaker import cloak_document, sanitize_filename, sanitize_filename_for_config, _build_cloak_replacements
+from clientcloak.cloaker import cloak_document, sanitize_filename, sanitize_filename_for_config, _build_cloak_replacements, _expand_content_replacements
 from clientcloak.uncloaker import uncloak_document
 from clientcloak.docx_handler import load_document, extract_all_text
 from clientcloak.models import CloakConfig, CommentMode, PartyAlias
@@ -469,3 +469,39 @@ class TestFilenameSanitization:
         assert "Acme" not in actual_output.stem
         assert "BigCo" not in actual_output.stem
         assert actual_output.exists()
+
+
+# ===================================================================
+# _expand_content_replacements tests
+# ===================================================================
+
+class TestExpandContentReplacements:
+    """Verify suffix-stripped variants are added for comment sanitization."""
+
+    def test_adds_stripped_variant(self):
+        """'Making Reign Inc.' should also generate 'Making Reign'."""
+        replacements = {"Making Reign Inc.": "[Company]"}
+        expanded = _expand_content_replacements(replacements)
+        assert expanded["Making Reign Inc."] == "[Company]"
+        assert expanded["Making Reign"] == "[Company]"
+
+    def test_no_duplicate_if_stripped_already_present(self):
+        """If the stripped form is already an explicit replacement, don't overwrite."""
+        replacements = {
+            "Acme Corp.": "[Vendor]",
+            "Acme": "[Vendor-Short]",
+        }
+        expanded = _expand_content_replacements(replacements)
+        assert expanded["Acme"] == "[Vendor-Short]"  # not overwritten
+
+    def test_no_suffix_no_extra_variant(self):
+        """Names without a corporate suffix produce no extra entries."""
+        replacements = {"John Smith": "[Person]"}
+        expanded = _expand_content_replacements(replacements)
+        assert len(expanded) == 1
+
+    def test_llc_suffix_stripped(self):
+        """LLC suffix is stripped to create a variant."""
+        replacements = {"Software Experts LLC": "[Vendor]"}
+        expanded = _expand_content_replacements(replacements)
+        assert "Software Experts" in expanded

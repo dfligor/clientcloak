@@ -428,9 +428,16 @@ def _anonymize_comments(
     xml_str = re.sub(r"<w:comment\s[^>]*?>", _replace_attrs, xml_str)
 
     # Apply content replacements (SANITIZE mode)
+    # Case-insensitive, longest-first to prevent partial-match clobbering.
     if content_replacements:
-        for original, replacement in content_replacements.items():
-            xml_str = xml_str.replace(original, replacement)
+        sorted_replacements = sorted(
+            content_replacements.items(), key=lambda kv: len(kv[0]), reverse=True
+        )
+        for original, replacement in sorted_replacements:
+            xml_str = re.sub(
+                re.escape(original), lambda _, r=replacement: r, xml_str,
+                flags=re.IGNORECASE,
+            )
 
     return xml_str.encode("utf-8"), effective_mapping
 

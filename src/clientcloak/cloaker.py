@@ -65,6 +65,21 @@ def _strip_corporate_suffix(name: str) -> str:
     ).strip()
 
 
+def _expand_content_replacements(cloak_replacements: dict[str, str]) -> dict[str, str]:
+    """Expand replacements with suffix-stripped variants for comment sanitization.
+
+    For each party name like "Making Reign Inc.", also adds the stripped form
+    "Making Reign" mapping to the same placeholder, so shortened references
+    in comments are caught.  Existing entries are never overwritten.
+    """
+    expanded = dict(cloak_replacements)
+    for original, placeholder in cloak_replacements.items():
+        stripped = _strip_corporate_suffix(original)
+        if stripped and stripped != original and stripped not in expanded:
+            expanded[stripped] = placeholder
+    return expanded
+
+
 def sanitize_filename(filename: str, cloak_replacements: dict[str, str]) -> str:
     """
     Apply cloak replacements to a filename, case-insensitively.
@@ -228,11 +243,14 @@ def cloak_document(
         metadata_report = inspect_metadata(output_path)
 
     # --- 6. Process comments ---
+    # Expand replacements with suffix-stripped variants so shortened names
+    # (e.g. "Making Reign" for "Making Reign Inc.") are also caught.
+    comment_replacements = _expand_content_replacements(cloak_replacements)
     comment_author_mapping = process_comments(
         input_path=output_path,
         output_path=output_path,
         mode=config.comment_mode,
-        content_replacements=cloak_replacements if cloak_replacements else None,
+        content_replacements=comment_replacements if comment_replacements else None,
     )
 
     # --- 7. Build and save mapping file ---
