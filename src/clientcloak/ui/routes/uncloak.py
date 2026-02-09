@@ -68,22 +68,31 @@ async def uncloak(
 
     try:
         redlined_path = get_session_file(session_id, "redlined.docx")
-        redlined_content = await redlined_file.read()
-        if len(redlined_content) > _MAX_DOCX_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail="Document too large. Maximum upload size is 100 MB.",
-            )
-        redlined_path.write_bytes(redlined_content)
+        # Stream in chunks to avoid buffering an arbitrarily large upload.
+        redlined_chunks: list[bytes] = []
+        redlined_size = 0
+        while chunk := await redlined_file.read(1024 * 1024):  # 1 MB chunks
+            redlined_size += len(chunk)
+            if redlined_size > _MAX_DOCX_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail="Document too large. Maximum upload size is 100 MB.",
+                )
+            redlined_chunks.append(chunk)
+        redlined_path.write_bytes(b"".join(redlined_chunks))
 
         mapping_path = get_session_file(session_id, "mapping.json")
-        mapping_content = await mapping_file.read()
-        if len(mapping_content) > _MAX_MAPPING_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail="Mapping file too large. Maximum size is 10 MB.",
-            )
-        mapping_path.write_bytes(mapping_content)
+        mapping_chunks: list[bytes] = []
+        mapping_size = 0
+        while chunk := await mapping_file.read(1024 * 1024):
+            mapping_size += len(chunk)
+            if mapping_size > _MAX_MAPPING_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail="Mapping file too large. Maximum size is 10 MB.",
+                )
+            mapping_chunks.append(chunk)
+        mapping_path.write_bytes(b"".join(mapping_chunks))
 
         logger.info(
             "Files uploaded for uncloaking",

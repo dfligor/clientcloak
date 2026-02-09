@@ -442,19 +442,32 @@ def _anonymize_comments(
     xml_str = re.sub(r"<w:comment\s[^>]*?>", _replace_attrs, xml_str)
 
     # Apply content replacements (SANITIZE mode)
+    # Replacements are restricted to text inside <w:t> elements so that
+    # XML tag names and attributes are never accidentally modified.
     # Case-insensitive, longest-first to prevent partial-match clobbering.
-    # Replacement values are XML-escaped to prevent injection into the
-    # raw XML string.
     if content_replacements:
-        sorted_replacements = sorted(
-            content_replacements.items(), key=lambda kv: len(kv[0]), reverse=True
+        sorted_keys = sorted(content_replacements.keys(), key=len, reverse=True)
+        content_pattern = re.compile(
+            "|".join(re.escape(k) for k in sorted_keys),
+            flags=re.IGNORECASE,
         )
-        for original, replacement in sorted_replacements:
-            safe_replacement = xml_escape(replacement)
-            xml_str = re.sub(
-                re.escape(original), lambda _, r=safe_replacement: r, xml_str,
-                flags=re.IGNORECASE,
+        lookup = {k.lower(): xml_escape(v) for k, v in content_replacements.items()}
+
+        def _replace_in_wt(wt_match: re.Match) -> str:
+            tag_open = wt_match.group(1)
+            text_content = wt_match.group(2)
+            tag_close = wt_match.group(3)
+            new_text = content_pattern.sub(
+                lambda m: lookup[m.group().lower()], text_content,
             )
+            return tag_open + new_text + tag_close
+
+        xml_str = re.sub(
+            r"(<w:t[^>]*>)(.*?)(</w:t>)",
+            _replace_in_wt,
+            xml_str,
+            flags=re.DOTALL,
+        )
 
     return xml_str.encode("utf-8"), effective_mapping
 

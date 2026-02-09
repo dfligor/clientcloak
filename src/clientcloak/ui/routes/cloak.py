@@ -60,13 +60,18 @@ async def upload_document(file: UploadFile = File(...)):
 
     try:
         upload_path = get_session_file(session_id, "original.docx")
-        content = await file.read()
-        if len(content) > _MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail="File too large. Maximum upload size is 100 MB.",
-            )
-        upload_path.write_bytes(content)
+        # Stream in chunks to avoid buffering an arbitrarily large upload.
+        chunks: list[bytes] = []
+        total_size = 0
+        while chunk := await file.read(1024 * 1024):  # 1 MB chunks
+            total_size += len(chunk)
+            if total_size > _MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail="File too large. Maximum upload size is 100 MB.",
+                )
+            chunks.append(chunk)
+        upload_path.write_bytes(b"".join(chunks))
         logger.info("File uploaded", session_id=session_id, filename=file.filename)
     except Exception as exc:
         logger.error("Failed to save uploaded file", session_id=session_id, error=str(exc))
