@@ -8,8 +8,9 @@ Prompt injection patterns are adapted from PlaybookRedliner's battle-tested
 security module and extended with additional coverage.
 """
 
+from __future__ import annotations
+
 import re
-from typing import Optional
 
 from docx import Document
 from docx.oxml.ns import qn
@@ -226,7 +227,7 @@ INVISIBLE_CHAR_RE = re.compile(_INVISIBLE_CHAR_CLASS)
 # Color helpers (adapted from PlaybookRedliner)
 # ---------------------------------------------------------------------------
 
-def _is_light_color(color: Optional[RGBColor], threshold: int = 240) -> bool:
+def _is_light_color(color: RGBColor | None, threshold: int = 240) -> bool:
     """
     Return True if *color* is near-white (all channels >= *threshold*).
 
@@ -240,7 +241,7 @@ def _is_light_color(color: Optional[RGBColor], threshold: int = 240) -> bool:
         return False
 
 
-def _color_hex(color: Optional[RGBColor]) -> str:
+def _color_hex(color: RGBColor | None) -> str:
     """Return a human-readable hex string for an RGBColor, or 'N/A'."""
     if color is None:
         return "N/A"
@@ -282,10 +283,8 @@ def extract_all_text_for_scanning(doc: Document) -> str:
         for header_footer in (section.header, section.first_page_header,
                               section.even_page_header, section.footer,
                               section.first_page_footer, section.even_page_footer):
-            if header_footer is None or not header_footer.is_linked_to_previous:
-                # is_linked_to_previous being False means it has its own content
-                pass
-            # Always try to extract — linked headers may still have text.
+            # Even "linked to previous" headers inherit content from the
+            # prior section, so we scan all of them unconditionally.
             if header_footer is not None:
                 for para in header_footer.paragraphs:
                     text = para.text.strip()
@@ -566,7 +565,7 @@ def scan_metadata_fields(doc: Document) -> list[SecurityFinding]:
     findings: list[SecurityFinding] = []
     props = doc.core_properties
 
-    fields: list[tuple[str, Optional[str]]] = [
+    fields: list[tuple[str, str | None]] = [
         ("Author", props.author),
         ("Last Modified By", props.last_modified_by),
         ("Subject", props.subject),

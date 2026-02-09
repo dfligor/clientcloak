@@ -18,6 +18,7 @@ from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 from docx import Document
 
 from .models import MetadataReport
@@ -170,7 +171,8 @@ def strip_metadata(
     # Capture a "before" report so callers know what was removed.
     before_report = inspect_metadata(input_path)
 
-    # Read entire input into memory so input_path == output_path is safe.
+    # Read entire input into memory so input_path == output_path is safe
+    # (zipfile can't read and write the same file simultaneously).
     input_bytes = input_path.read_bytes()
 
     buf = BytesIO()
@@ -220,7 +222,7 @@ def _clean_core_properties(xml_data: bytes) -> bytes:
     Returns:
         Cleaned XML as bytes, preserving the original namespace declarations.
     """
-    root = ET.fromstring(xml_data)
+    root = _safe_fromstring(xml_data)
 
     _set_element_text(root, "dc:creator", "", _NS_CORE)
     _set_element_text(root, "cp:lastModifiedBy", "", _NS_CORE)
@@ -253,7 +255,7 @@ def _clean_app_properties(xml_data: bytes) -> bytes:
     Returns:
         Cleaned XML as bytes.
     """
-    root = ET.fromstring(xml_data)
+    root = _safe_fromstring(xml_data)
 
     _set_element_text(root, "ep:Company", "", _NS_APP)
     _set_element_text(root, "ep:Manager", "", _NS_APP)
@@ -276,7 +278,7 @@ def _clean_comments(xml_data: bytes) -> bytes:
     Returns:
         Cleaned XML with all comment elements removed.
     """
-    root = ET.fromstring(xml_data)
+    root = _safe_fromstring(xml_data)
     ns_w = _NS_W["w"]
 
     for comment in root.findall(f"{{{ns_w}}}comment"):
@@ -300,7 +302,7 @@ def _extract_app_properties(xml_data: bytes, report: MetadataReport) -> Metadata
     Returns:
         The same MetadataReport instance, updated with app property values.
     """
-    root = ET.fromstring(xml_data)
+    root = _safe_fromstring(xml_data)
     ns_ep = _NS_APP["ep"]
 
     report.company = _get_text(root, f"{{{ns_ep}}}Company")
@@ -333,7 +335,7 @@ def _extract_custom_properties(xml_data: bytes, report: MetadataReport) -> Metad
     Returns:
         The same MetadataReport instance, updated with custom property values.
     """
-    root = ET.fromstring(xml_data)
+    root = _safe_fromstring(xml_data)
     ns_cust = _NS_CUSTOM["cust"]
     ns_vt = _NS_CUSTOM["vt"]
 
@@ -364,7 +366,7 @@ def _count_comments(xml_data: bytes) -> int:
     Returns:
         The number of comment elements found.
     """
-    root = ET.fromstring(xml_data)
+    root = _safe_fromstring(xml_data)
     ns_w = _NS_W["w"]
     return len(root.findall(f"{{{ns_w}}}comment"))
 

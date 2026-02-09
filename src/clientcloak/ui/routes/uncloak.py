@@ -7,6 +7,8 @@ uncloaking pipeline, and downloading the restored document.
 
 from __future__ import annotations
 
+import asyncio
+
 import structlog
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -68,31 +70,29 @@ async def uncloak(
 
     try:
         redlined_path = get_session_file(session_id, "redlined.docx")
-        # Stream in chunks to avoid buffering an arbitrarily large upload.
-        redlined_chunks: list[bytes] = []
+        # Stream chunks directly to disk to avoid holding the full file in memory.
         redlined_size = 0
-        while chunk := await redlined_file.read(1024 * 1024):  # 1 MB chunks
-            redlined_size += len(chunk)
-            if redlined_size > _MAX_DOCX_BYTES:
-                raise HTTPException(
-                    status_code=413,
-                    detail="Document too large. Maximum upload size is 100 MB.",
-                )
-            redlined_chunks.append(chunk)
-        redlined_path.write_bytes(b"".join(redlined_chunks))
+        with open(redlined_path, "wb") as f:
+            while chunk := await redlined_file.read(1024 * 1024):  # 1 MB chunks
+                redlined_size += len(chunk)
+                if redlined_size > _MAX_DOCX_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="Document too large. Maximum upload size is 100 MB.",
+                    )
+                f.write(chunk)
 
         mapping_path = get_session_file(session_id, "mapping.json")
-        mapping_chunks: list[bytes] = []
         mapping_size = 0
-        while chunk := await mapping_file.read(1024 * 1024):
-            mapping_size += len(chunk)
-            if mapping_size > _MAX_MAPPING_BYTES:
-                raise HTTPException(
-                    status_code=413,
-                    detail="Mapping file too large. Maximum size is 10 MB.",
-                )
-            mapping_chunks.append(chunk)
-        mapping_path.write_bytes(b"".join(mapping_chunks))
+        with open(mapping_path, "wb") as f:
+            while chunk := await mapping_file.read(1024 * 1024):
+                mapping_size += len(chunk)
+                if mapping_size > _MAX_MAPPING_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="Mapping file too large. Maximum size is 10 MB.",
+                    )
+                f.write(chunk)
 
         logger.info(
             "Files uploaded for uncloaking",
@@ -106,7 +106,8 @@ async def uncloak(
     output_path = get_session_file(session_id, "uncloaked.docx")
 
     try:
-        replacements_restored = uncloak_document(
+        replacements_restored = await asyncio.to_thread(
+            uncloak_document,
             input_path=redlined_path,
             output_path=output_path,
             mapping_path=mapping_path,
@@ -133,21 +134,23 @@ async def uncloak(
             if stem.endswith("_cloaked"):
                 stem = stem[:-len("_cloaked")]
             mapping = load_mapping(mapping_path)
-            # mapping.mappings is placeholder -> original
+            # mapping.mappings is placeholder -> original.  Sort longest
+            # placeholder first so "[Company A]" is replaced before
+            # "[Company]", preventing partial-match clobbering.
             for placeholder, original in sorted(
                 mapping.mappings.items(), key=lambda kv: len(kv[0]), reverse=True
             ):
                 stem = stem.replace(placeholder, original)
             uncloaked_filename = f"{stem}_uncloaked.docx"
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to compute uncloaked filename", error=str(exc))
 
     # Save the restored filename for the download endpoint
     try:
         name_file = get_session_file(session_id, ".uncloaked_filename")
         name_file.write_text(uncloaked_filename, encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to save uncloaked filename", error=str(exc))
 
     return JSONResponse(content={
         "session_id": session_id,
@@ -182,8 +185,8 @@ async def download_uncloaked(session_id: str):
         name_file = session_dir / ".uncloaked_filename"
         if name_file.is_file():
             download_name = name_file.read_text(encoding="utf-8").strip()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to read uncloaked filename", error=str(exc))
 
     return FileResponse(
         path=str(file_path),

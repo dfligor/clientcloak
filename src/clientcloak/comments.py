@@ -34,6 +34,8 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape as xml_escape
 
+from defusedxml.ElementTree import fromstring as _safe_fromstring
+
 from .models import CommentAuthor, CommentInfo, CommentMode
 
 
@@ -108,7 +110,7 @@ def inspect_comments(
 
         xml_data = zf.read("word/comments.xml")
 
-    root = ET.fromstring(xml_data)
+    root = _safe_fromstring(xml_data)
 
     comments: list[CommentInfo] = []
     author_order: list[str] = []  # preserves first-seen order
@@ -410,7 +412,7 @@ def _anonymize_comments(
         - The effective author mapping used (including auto-generated entries).
     """
     # Step 1: Parse read-only to build the effective author mapping
-    root = ET.fromstring(xml_data)
+    root = _safe_fromstring(xml_data)
     effective_mapping = dict(author_mapping)
     auto_index = len(author_mapping)
 

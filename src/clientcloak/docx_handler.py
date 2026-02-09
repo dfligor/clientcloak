@@ -138,7 +138,7 @@ def save_document(doc: Document, file_path: str | Path) -> Path:
 # python-docx object that owns the text (Paragraph, _Cell, etc.).  Callers
 # can use the source_element reference to locate or annotate the origin.
 
-TextSource = tuple  # (str, object)
+TextSource = tuple[str, object]
 
 
 def extract_all_text(doc: Document) -> list[TextSource]:

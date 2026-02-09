@@ -144,6 +144,41 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
             suggested_placeholder=generate_placeholder("PERSON", idx),
         ))
 
+    # Full-document company name detection by corporate suffix.
+    # Catches third-party references like "Adventura Properties, LLC" that
+    # lack parenthetical defined terms and wouldn't be found by
+    # detect_party_names (which only scans the preamble).
+    _bare_suffix_re = re.compile(
+        r',?\s*(?:' + _SUFFIX_PATTERN + r')\.?\s*$', re.IGNORECASE,
+    )
+    # Common determiners that can start a false-positive match
+    # (e.g. "The Services", "This Agreement").
+    _determiner_re = re.compile(
+        r'^(?:The|This|That|These|Those|A|An)\s+', re.IGNORECASE,
+    )
+    company_counts: Counter = Counter()
+    for match in _COMPANY_SUFFIX_RE.finditer(text):
+        # Ensure the suffix isn't mid-word (e.g. "County" matching "Co")
+        end_pos = match.end()
+        if end_pos < len(text) and text[end_pos].isalpha():
+            continue
+        name = match.group(1).strip().rstrip(",").rstrip(".")
+        # Skip bare suffixes (e.g. just "Services" with no real name words)
+        if not _bare_suffix_re.sub('', name).strip():
+            continue
+        # Skip matches that start with a common determiner
+        if _determiner_re.match(name):
+            continue
+        company_counts[name] += 1
+    for idx, (name, count) in enumerate(company_counts.most_common(), 1):
+        entities.append(DetectedEntity(
+            text=name,
+            entity_type="COMPANY",
+            confidence=1.0,
+            count=count,
+            suggested_placeholder=generate_placeholder("COMPANY", idx),
+        ))
+
     return entities
 
 
@@ -190,12 +225,14 @@ def detect_entities(
     # 3. Deduplicate
     entities = deduplicate_entities(entities)
 
-    # 4. Filter out known party names
+    # 4. Filter out known party names.
+    # Normalize by stripping trailing periods/commas so "Acme Inc." and
+    # "Acme Inc" are treated as the same name.
     if party_names:
-        lower_names = {name.lower() for name in party_names if name}
+        lower_names = {name.lower().rstrip(".,") for name in party_names if name}
         entities = [
             e for e in entities
-            if e.text.lower() not in lower_names
+            if e.text.lower().rstrip(".,") not in lower_names
         ]
 
     # 5. Sort by count descending, then by text for stability
@@ -321,6 +358,30 @@ _DEAR_RE = re.compile(
 _DEFAULT_ROLE_LABELS = ("Company", "Counterparty")
 
 
+def _is_abbreviation(label: str, name: str) -> bool:
+    """Check if label appears to be an abbreviation or acronym of name.
+
+    Returns True for patterns like "CLS" for "Centinnial Logistics Services"
+    (initials match) or short all-uppercase strings that aren't common role
+    terms.
+    """
+    label_stripped = label.strip()
+    if not label_stripped:
+        return False
+
+    # All uppercase and short → likely abbreviation (CLS, IBM, ABC)
+    if label_stripped.isupper() and len(label_stripped) <= 10:
+        return True
+
+    # Check if first letters of name words form the label
+    name_words = [w for w in name.split() if w and w[0].isupper()]
+    initials = "".join(w[0] for w in name_words)
+    if initials.upper() == label_stripped.upper():
+        return True
+
+    return False
+
+
 def _label_resembles_name(label: str, name: str) -> bool:
     """Check if a defined-term label is derived from the company name itself.
 
@@ -334,9 +395,10 @@ def _label_resembles_name(label: str, name: str) -> bool:
         name="BigOrg Group PBC"    label="BigOrg Group" -> True  (exact core)
         name="AiSim Inc."          label="Licensee"     -> False (real role)
     """
-    # Strip suffix to get the core name, e.g. "AiSim Inc." -> "AiSim"
+    # Strip suffix to get the core name, e.g. "AiSim Inc." -> "AiSim".
+    # The ,? handles comma-separated forms like "VentMarket, LLC".
     suffix_pattern = re.compile(
-        r"\s+(?:" + _SUFFIX_PATTERN + r")\s*$",
+        r",?\s+(?:" + _SUFFIX_PATTERN + r")\s*$",
         re.IGNORECASE,
     )
     core = suffix_pattern.sub("", name).strip()
@@ -413,6 +475,16 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
             # The defined term is a short form of the name — include it as
             # a replacement variant so the cloaker replaces it too, but use
             # a generic role label to avoid exposing the name.
+            entry["defined_term"] = label
+            label = _DEFAULT_ROLE_LABELS[min(role_index, len(_DEFAULT_ROLE_LABELS) - 1)]
+            entry["label"] = label
+        elif _is_abbreviation(label, name):
+            # The defined term is an abbreviation/acronym (e.g. "CLS" for
+            # "Centinnial Logistics Services, LLC").  Include it as a
+            # defined_term so it gets replaced in the document body too.
+            # Use a generic role label to avoid the abbreviation leaking
+            # through the placeholder (e.g. [CLS] would reveal the acronym)
+            # and to prevent double-replacement collisions.
             entry["defined_term"] = label
             label = _DEFAULT_ROLE_LABELS[min(role_index, len(_DEFAULT_ROLE_LABELS) - 1)]
             entry["label"] = label

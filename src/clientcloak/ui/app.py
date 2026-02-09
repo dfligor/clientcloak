@@ -7,11 +7,12 @@ that wires up routes, static files, templates, and startup hooks.
 
 from __future__ import annotations
 
+import sys
 import threading
 import webbrowser
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
-
-import sys
 
 import structlog
 import uvicorn
@@ -20,6 +21,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
 from .. import __version__
@@ -64,6 +66,16 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Startup/shutdown lifecycle for the FastAPI app."""
+    removed = cleanup_expired_sessions()
+    if removed:
+        logger.info("Cleaned up expired sessions", count=removed)
+    logger.info("ClientCloak web server started")
+    yield
+
+
 def create_app() -> FastAPI:
     """
     Create and configure the FastAPI application.
@@ -71,17 +83,29 @@ def create_app() -> FastAPI:
     - Mounts static files at /static
     - Configures Jinja2 templates
     - Includes cloak and uncloak routers under /api prefix
-    - Registers startup hook for session cleanup
+    - Runs session cleanup on startup via lifespan
     - Serves index.html at GET /
     """
     application = FastAPI(
         title="ClientCloak",
         description="Bidirectional document sanitization for safe AI contract review.",
         version=__version__,
+        lifespan=_lifespan,
     )
 
     # --- Security headers ---
     application.add_middleware(_SecurityHeadersMiddleware)
+
+    # --- CORS --- Restrict cross-origin requests to localhost origins only.
+    # Without this, a malicious website could make cross-origin requests to
+    # the local server if a user has it running.  Uses a regex since the
+    # port is dynamic.
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$",
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
 
     # --- Mount static files ---
     _STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -94,14 +118,6 @@ def create_app() -> FastAPI:
     # --- Include API routers ---
     application.include_router(cloak_router, prefix="/api")
     application.include_router(uncloak_router, prefix="/api")
-
-    # --- Startup hook ---
-    @application.on_event("startup")
-    async def on_startup():
-        removed = cleanup_expired_sessions()
-        if removed:
-            logger.info("Cleaned up expired sessions", count=removed)
-        logger.info("ClientCloak web server started")
 
     # --- Root route ---
     @application.get("/", response_class=HTMLResponse)
@@ -131,6 +147,14 @@ def start_server(
         open_browser: If True, opens the default browser to the app URL
             after a short delay.
     """
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        logger.warning(
+            "Server binding to non-localhost address — the web UI has no "
+            "authentication and will be accessible to other machines on the "
+            "network. Use the native desktop app for authenticated access.",
+            host=host,
+        )
+
     if open_browser:
         url = f"http://{host}:{port}"
 

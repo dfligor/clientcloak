@@ -69,7 +69,9 @@ def get_session_dir(session_id: str) -> Path:
     if not _SESSION_ID_RE.match(session_id):
         raise ValueError(f"Session not found: {session_id}")
     session_dir = get_sessions_dir() / session_id
-    # Resolve to catch any symlink-based traversal and verify containment.
+    # .resolve() follows symlinks, so a crafted session_id like
+    # "../../etc" would resolve outside the sessions root.  The
+    # containment check ensures the resolved path stays inside.
     sessions_root = get_sessions_dir().resolve()
     resolved = session_dir.resolve()
     if not str(resolved).startswith(str(sessions_root) + "/") and resolved != sessions_root:
@@ -125,7 +127,9 @@ def cleanup_expired_sessions() -> int:
             continue
 
         created_file = entry / ".created"
-        expired = True  # default to expired if we can't read the timestamp
+        # Fail-secure: if the timestamp is missing or unparseable, treat
+        # the session as expired rather than retaining it indefinitely.
+        expired = True
 
         if created_file.is_file():
             try:

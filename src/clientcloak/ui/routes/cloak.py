@@ -6,13 +6,14 @@ Handles document upload, security scanning, cloaking, and file download.
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import structlog
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
-from ...cloaker import cloak_document, preview_entities, sanitize_filename
+from ...cloaker import build_cloak_replacements, cloak_document, preview_entities, sanitize_filename
 from ...comments import inspect_comments
 from ...detector import detect_entities, detect_party_names
 from ...docx_handler import extract_all_text, load_document
@@ -60,26 +61,27 @@ async def upload_document(file: UploadFile = File(...)):
 
     try:
         upload_path = get_session_file(session_id, "original.docx")
-        # Stream in chunks to avoid buffering an arbitrarily large upload.
-        chunks: list[bytes] = []
+        # Stream chunks directly to disk to avoid holding the full file in memory.
         total_size = 0
-        while chunk := await file.read(1024 * 1024):  # 1 MB chunks
-            total_size += len(chunk)
-            if total_size > _MAX_UPLOAD_BYTES:
-                raise HTTPException(
-                    status_code=413,
-                    detail="File too large. Maximum upload size is 100 MB.",
-                )
-            chunks.append(chunk)
-        upload_path.write_bytes(b"".join(chunks))
+        with open(upload_path, "wb") as f:
+            while chunk := await file.read(1024 * 1024):  # 1 MB chunks
+                total_size += len(chunk)
+                if total_size > _MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="File too large. Maximum upload size is 100 MB.",
+                    )
+                f.write(chunk)
         logger.info("File uploaded", session_id=session_id, filename=file.filename)
     except Exception as exc:
         logger.error("Failed to save uploaded file", session_id=session_id, error=str(exc))
         raise HTTPException(status_code=500, detail="Failed to save uploaded file.") from exc
 
     # --- Run automatic scans ---
+    # These are CPU-bound operations; run in a thread to avoid blocking
+    # the async event loop.
     try:
-        doc = load_document(upload_path)
+        doc = await asyncio.to_thread(load_document, upload_path)
     except Exception as exc:
         logger.error("Failed to load document", session_id=session_id, error=str(exc))
         raise HTTPException(
@@ -89,7 +91,7 @@ async def upload_document(file: UploadFile = File(...)):
 
     # Security scan
     try:
-        findings = scan_document(doc)
+        findings = await asyncio.to_thread(scan_document, doc)
         security_findings = [f.model_dump() for f in findings]
     except Exception as exc:
         logger.warning("Security scan failed", session_id=session_id, error=str(exc))
@@ -97,7 +99,7 @@ async def upload_document(file: UploadFile = File(...)):
 
     # Metadata inspection
     try:
-        metadata_report = inspect_metadata(upload_path)
+        metadata_report = await asyncio.to_thread(inspect_metadata, upload_path)
         metadata = metadata_report.model_dump()
     except Exception as exc:
         logger.warning("Metadata inspection failed", session_id=session_id, error=str(exc))
@@ -105,7 +107,7 @@ async def upload_document(file: UploadFile = File(...)):
 
     # Comment inspection
     try:
-        comments_list, authors_list = inspect_comments(upload_path)
+        comments_list, authors_list = await asyncio.to_thread(inspect_comments, upload_path)
         comments = {
             "authors": [a.model_dump() for a in authors_list],
             "count": len(comments_list),
@@ -119,7 +121,7 @@ async def upload_document(file: UploadFile = File(...)):
     detected_entities = []
     suggested_parties = []
     try:
-        text_fragments = extract_all_text(doc)
+        text_fragments = await asyncio.to_thread(extract_all_text, doc)
         full_text = "\n".join(text for text, _source in text_fragments)
 
         # Preamble: first ~5 non-empty paragraphs
@@ -127,12 +129,12 @@ async def upload_document(file: UploadFile = File(...)):
         preamble_text = "\n".join(non_empty[:5])
 
         # Detect entities (no party name filtering yet — that happens at cloak time)
-        entities = detect_entities(full_text)
+        entities = await asyncio.to_thread(detect_entities, full_text)
         detected_entities = [e.model_dump() for e in entities]
 
         # Detect party names from preamble
         preamble_for_parties = "\n".join(non_empty[:10])  # slightly more context for party detection
-        suggested_parties = detect_party_names(preamble_for_parties)
+        suggested_parties = await asyncio.to_thread(detect_party_names, preamble_for_parties)
     except Exception as exc:
         logger.warning("Text extraction/detection failed", session_id=session_id, error=str(exc))
 
@@ -140,8 +142,8 @@ async def upload_document(file: UploadFile = File(...)):
     try:
         name_file = get_session_file(session_id, ".original_filename")
         name_file.write_text(file.filename, encoding="utf-8")
-    except Exception:
-        pass  # non-critical
+    except Exception as exc:
+        logger.debug("Failed to save original filename", error=str(exc))
 
     return JSONResponse(content={
         "session_id": session_id,
@@ -202,7 +204,7 @@ async def detect_entities_route(
 
     # --- Run detection ---
     try:
-        entities = preview_entities(upload_path, config)
+        entities = await asyncio.to_thread(preview_entities, upload_path, config)
         logger.info(
             "Entity detection complete",
             session_id=session_id,
@@ -311,12 +313,12 @@ async def cloak(
     mapping_path = session_dir / "mapping.json"
 
     # --- Build cloak replacements for filename sanitization ---
-    from ...cloaker import _build_cloak_replacements
-    cloak_replacements = _build_cloak_replacements(config)
+    cloak_replacements = build_cloak_replacements(config)
 
     # --- Run cloaking ---
     try:
-        result = cloak_document(
+        result = await asyncio.to_thread(
+            cloak_document,
             input_path=upload_path,
             output_path=output_path,
             mapping_path=mapping_path,
@@ -334,11 +336,14 @@ async def cloak(
         raise HTTPException(status_code=500, detail="Cloaking failed. Please try again.") from exc
 
     # --- Save cloak replacements for download filename sanitization ---
+    # The mapping file stores placeholder→original, but the download endpoint
+    # needs original→placeholder to sanitize the filename.  Persisting the
+    # cloak_replacements dict (which has that direction) avoids re-inverting.
     try:
         replacements_file = session_dir / ".cloak_replacements.json"
         replacements_file.write_text(json.dumps(cloak_replacements), encoding="utf-8")
-    except Exception:
-        pass  # non-critical
+    except Exception as exc:
+        logger.debug("Failed to save cloak replacements", error=str(exc))
 
     # --- Build mapping preview (first 10 entries) ---
     mapping_preview = dict(list(result.mapping.mappings.items())[:10])
@@ -354,8 +359,8 @@ async def cloak(
             sanitized_stem = sanitize_filename(stem, cloak_replacements)
             sanitized_filename = f"{sanitized_stem}_cloaked.docx"
             sanitized_mapping_filename = f"{stem}_mapping.json"
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to compute sanitized filenames", error=str(exc))
 
     return JSONResponse(content={
         "replacements_applied": result.replacements_applied,
@@ -412,7 +417,8 @@ async def download_file(session_id: str, file_type: str):
                 download_name = f"{stem}_cloaked.docx"
             else:
                 download_name = "cloaked.docx"
-        except Exception:
+        except Exception as exc:
+            logger.debug("Failed to compute cloaked download name", error=str(exc))
             download_name = "cloaked.docx"
     else:
         file_path = session_dir / "mapping.json"
@@ -432,7 +438,8 @@ async def download_file(session_id: str, file_type: str):
                 download_name = f"{stem}_mapping.json"
             else:
                 download_name = "mapping.json"
-        except Exception:
+        except Exception as exc:
+            logger.debug("Failed to compute mapping download name", error=str(exc))
             download_name = "mapping.json"
 
     if not file_path.is_file():

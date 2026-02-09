@@ -32,13 +32,20 @@ from .security import scan_document
 logger = logging.getLogger(__name__)
 
 
-def _build_cloak_replacements(config: CloakConfig) -> dict[str, str]:
+def _build_mappings_and_replacements(
+    config: CloakConfig,
+) -> tuple[dict[str, str], dict[str, str]]:
     """
-    Build the original -> placeholder replacement dictionary from a config.
+    Build both the mapping dict and the cloak replacement dict from a config.
 
-    This is the same logic used inside :func:`cloak_document` (step 3),
-    extracted so callers can access the replacement dict independently
-    (e.g. for filename sanitization).
+    Returns a 2-tuple of:
+    - **mappings**: ``placeholder -> original`` (e.g. ``"[Vendor]" -> "Acme Inc."``)
+      used for the mapping file.
+    - **cloak_replacements**: ``original -> placeholder`` (e.g. ``"Acme Inc." -> "[Vendor]"``)
+      used for text replacement in the document, comments, and filenames.
+
+    This is the single source of truth for replacement-building logic,
+    called by both :func:`build_cloak_replacements` and :func:`cloak_document`.
     """
     mappings: dict[str, str] = {
         f"[{config.party_a_label}]": config.party_a_name,
@@ -50,26 +57,47 @@ def _build_cloak_replacements(config: CloakConfig) -> dict[str, str]:
         mappings[f"[{alias.label}]"] = alias.name
     mappings.update(config.additional_replacements)
 
-    base = {original: placeholder for placeholder, original in mappings.items()}
+    cloak_replacements = {
+        original: placeholder for placeholder, original in mappings.items()
+    }
 
     # Add defined-term short forms (e.g. "Acme" for "Acme Wireless, Inc.").
     # These map to the SAME placeholder as the primary name and must be
     # injected after inversion since the {placeholder: original} dict can
     # only hold one original per key.
     for sf in config.party_a_short_forms:
-        if sf and sf not in base:
-            base[sf] = f"[{config.party_a_label}]"
+        if sf and sf not in cloak_replacements:
+            cloak_replacements[sf] = f"[{config.party_a_label}]"
     for sf in config.party_b_short_forms:
-        if sf and sf not in base:
-            base[sf] = f"[{config.party_b_label}]"
+        if sf and sf not in cloak_replacements:
+            cloak_replacements[sf] = f"[{config.party_b_label}]"
 
-    return _expand_content_replacements(base)
+    cloak_replacements = _expand_content_replacements(cloak_replacements)
+    return mappings, cloak_replacements
+
+
+def build_cloak_replacements(config: CloakConfig) -> dict[str, str]:
+    """
+    Build the ``original -> placeholder`` replacement dictionary from a config.
+
+    Convenience wrapper around :func:`_build_mappings_and_replacements` for
+    callers that only need the replacement dict (e.g. filename sanitization).
+    """
+    _mappings, cloak_replacements = _build_mappings_and_replacements(config)
+    return cloak_replacements
+
+
+# Keep the old name as an alias for backwards compatibility.
+_build_cloak_replacements = build_cloak_replacements
 
 
 def _strip_corporate_suffix(name: str) -> str:
-    """Strip trailing corporate suffixes like Inc., LLC, Corp., GmbH, etc."""
+    """Strip trailing corporate suffixes like Inc., LLC, Corp., GmbH, etc.
+
+    Handles both "Name LLC" and "Name, LLC" (comma-separated) forms.
+    """
     return re.sub(
-        rf"\s+(?:{_SUFFIX_PATTERN})\s*$",
+        rf",?\s+(?:{_SUFFIX_PATTERN})\s*$",
         "",
         name,
         flags=re.IGNORECASE,
@@ -177,7 +205,7 @@ def sanitize_filename_for_config(filename: str, config: CloakConfig) -> str:
     Returns:
         The filename with party names replaced by their bracketed labels.
     """
-    return sanitize_filename(filename, _build_cloak_replacements(config))
+    return sanitize_filename(filename, build_cloak_replacements(config))
 
 
 def cloak_document(
@@ -227,41 +255,16 @@ def cloak_document(
         logger.info("Security scan found %d issue(s).", len(findings))
 
     # --- 3. Build replacement dict (original -> placeholder) ---
-    # The mapping file stores placeholder -> original. We build that first,
-    # then invert it for the replacement pass.
-    # Labels are wrapped in square brackets — the standard convention in
-    # legal templates (e.g., [Customer], [Vendor], [Licensor]).
-    mappings: dict[str, str] = {
-        f"[{config.party_a_label}]": config.party_a_name,
-        f"[{config.party_b_label}]": config.party_b_name,
-    }
+    # Uses the shared helper so the logic is defined in one place.
+    # mappings: placeholder -> original (for the mapping file)
+    # cloak_replacements: original -> placeholder (for text replacement)
+    mappings, cloak_replacements = _build_mappings_and_replacements(config)
+
     for alias in config.party_a_aliases:
-        mappings[f"[{alias.label}]"] = alias.name
         logger.info("Party A alias: %s -> [%s]", alias.name, alias.label)
     for alias in config.party_b_aliases:
-        mappings[f"[{alias.label}]"] = alias.name
         logger.info("Party B alias: %s -> [%s]", alias.name, alias.label)
-    # Additional replacements are already in placeholder -> original form.
-    mappings.update(config.additional_replacements)
-
     logger.info("Total mappings to apply: %d", len(mappings))
-
-    # Invert: original -> placeholder for text replacement.
-    cloak_replacements: dict[str, str] = {
-        original: placeholder for placeholder, original in mappings.items()
-    }
-
-    # Add defined-term short forms (same logic as _build_cloak_replacements).
-    for sf in config.party_a_short_forms:
-        if sf and sf not in cloak_replacements:
-            cloak_replacements[sf] = f"[{config.party_a_label}]"
-    for sf in config.party_b_short_forms:
-        if sf and sf not in cloak_replacements:
-            cloak_replacements[sf] = f"[{config.party_b_label}]"
-
-    # Expand with suffix-stripped variants so shortened references in the
-    # document body (e.g. "AiSim" for "AiSim Inc.") are also replaced.
-    cloak_replacements = _expand_content_replacements(cloak_replacements)
 
     # --- 3b. Sanitize the output filename ---
     # Party names may appear in the filename (e.g. "Acme_BigCo_NDA.docx").
