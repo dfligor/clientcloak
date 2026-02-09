@@ -121,6 +121,8 @@ class CloakConfig(BaseModel):
     party_b_label: str = "Vendor"
     party_a_aliases: list[PartyAlias] = []
     party_b_aliases: list[PartyAlias] = []
+    party_a_short_forms: list[str] = []  # defined terms that are short forms of party A name
+    party_b_short_forms: list[str] = []  # defined terms that are short forms of party B name
     additional_replacements: dict[str, str] = {}  # user-confirmed entity replacements
     comment_mode: CommentMode = CommentMode.SANITIZE
     strip_metadata: bool = True

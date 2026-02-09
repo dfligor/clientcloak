@@ -51,6 +51,18 @@ def _build_cloak_replacements(config: CloakConfig) -> dict[str, str]:
     mappings.update(config.additional_replacements)
 
     base = {original: placeholder for placeholder, original in mappings.items()}
+
+    # Add defined-term short forms (e.g. "Acme" for "Acme Wireless, Inc.").
+    # These map to the SAME placeholder as the primary name and must be
+    # injected after inversion since the {placeholder: original} dict can
+    # only hold one original per key.
+    for sf in config.party_a_short_forms:
+        if sf and sf not in base:
+            base[sf] = f"[{config.party_a_label}]"
+    for sf in config.party_b_short_forms:
+        if sf and sf not in base:
+            base[sf] = f"[{config.party_b_label}]"
+
     return _expand_content_replacements(base)
 
 
@@ -238,6 +250,14 @@ def cloak_document(
     cloak_replacements: dict[str, str] = {
         original: placeholder for placeholder, original in mappings.items()
     }
+
+    # Add defined-term short forms (same logic as _build_cloak_replacements).
+    for sf in config.party_a_short_forms:
+        if sf and sf not in cloak_replacements:
+            cloak_replacements[sf] = f"[{config.party_a_label}]"
+    for sf in config.party_b_short_forms:
+        if sf and sf not in cloak_replacements:
+            cloak_replacements[sf] = f"[{config.party_b_label}]"
 
     # Expand with suffix-stripped variants so shortened references in the
     # document body (e.g. "AiSim" for "AiSim Inc.") are also replaced.

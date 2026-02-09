@@ -940,6 +940,7 @@ function clientCloak() {
 
                 // Add suggested parties as COMPANY type
                 const parties = data.suggested_parties || [];
+                this._partyDefinedTerms = [];  // stash for alias submission
                 for (const party of parties) {
                     this.replacements.push({
                         text: party.name,
@@ -948,15 +949,10 @@ function clientCloak() {
                         count: null,
                         checked: true,
                     });
-                    // If the defined term is a short form of the name,
-                    // add it as a separate replacement so it gets cloaked too.
                     if (party.defined_term && party.defined_term !== party.name) {
-                        this.replacements.push({
-                            text: party.defined_term,
-                            label: '[' + party.label + ']',
-                            type: 'COMPANY',
-                            count: null,
-                            checked: true,
+                        this._partyDefinedTerms.push({
+                            partyLabel: party.label,
+                            definedTerm: party.defined_term,
                         });
                     }
                 }
@@ -1150,6 +1146,26 @@ ${docxStyles}
                 form.append('party_b_label', this.getPartyBLabel());
                 form.append('comment_mode', this.commentMode);
                 form.append('strip_metadata', 'true');
+
+                // Send defined-term short forms so the cloaker replaces them
+                const partyALabel = this.getPartyALabel();
+                const partyBLabel = this.getPartyBLabel();
+                const aShortForms = [];
+                const bShortForms = [];
+                for (const dt of (this._partyDefinedTerms || [])) {
+                    if (dt.partyLabel === partyALabel) {
+                        aShortForms.push(dt.definedTerm);
+                    } else if (dt.partyLabel === partyBLabel) {
+                        bShortForms.push(dt.definedTerm);
+                    }
+                }
+                if (aShortForms.length > 0) {
+                    form.append('party_a_short_forms', JSON.stringify(aShortForms));
+                }
+                if (bShortForms.length > 0) {
+                    form.append('party_b_short_forms', JSON.stringify(bShortForms));
+                }
+
                 const additionalReplacements = this.buildAdditionalReplacements();
                 if (Object.keys(additionalReplacements).length > 0) {
                     form.append('additional_replacements', JSON.stringify(additionalReplacements));
@@ -1223,6 +1239,7 @@ ${docxStyles}
             this.comments = {};
             this.replacements = [];
             this.customReplacements = [];
+            this._partyDefinedTerms = [];
             this.commentMode = 'sanitize';
             this.docPreviewOpen = false;
             this.docPreviewLoading = false;

@@ -226,6 +226,8 @@ async def cloak(
     strip_metadata: bool = Form(True),
     party_a_aliases: str = Form("[]"),
     party_b_aliases: str = Form("[]"),
+    party_a_short_forms: str = Form("[]"),
+    party_b_short_forms: str = Form("[]"),
     additional_replacements: str = Form("{}"),
 ):
     """
@@ -270,6 +272,18 @@ async def cloak(
     logger.info("Aliases parsed", party_a_count=len(parsed_a_aliases),
                 party_b_count=len(parsed_b_aliases))
 
+    # --- Parse short forms ---
+    try:
+        parsed_a_short_forms = json.loads(party_a_short_forms)
+        parsed_b_short_forms = json.loads(party_b_short_forms)
+        if not isinstance(parsed_a_short_forms, list):
+            parsed_a_short_forms = []
+        if not isinstance(parsed_b_short_forms, list):
+            parsed_b_short_forms = []
+    except (json.JSONDecodeError, TypeError):
+        parsed_a_short_forms = []
+        parsed_b_short_forms = []
+
     # --- Parse additional replacements (entity detections) ---
     try:
         parsed_additional = json.loads(additional_replacements)
@@ -286,6 +300,8 @@ async def cloak(
         party_b_label=party_b_label,
         party_a_aliases=parsed_a_aliases,
         party_b_aliases=parsed_b_aliases,
+        party_a_short_forms=parsed_a_short_forms,
+        party_b_short_forms=parsed_b_short_forms,
         additional_replacements=parsed_additional,
         comment_mode=comment_mode_enum,
         strip_metadata=strip_metadata,
