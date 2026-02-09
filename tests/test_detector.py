@@ -378,3 +378,44 @@ class TestDetectPartyNames:
         text = padding + ' Later Corp. (the "Client")'
         result = detect_party_names(text)
         assert len(result) == 0  # Acme is at beginning of preamble but padding pushes it out
+
+    def test_comma_in_company_name_with_intervening_text(self):
+        """Company name with comma before suffix and long intervening text before label."""
+        text = (
+            'Acme, Inc., a Delaware corporation, having its principal '
+            'place of business at 123 Oak Ave., Berkeley, California '
+            '95123 ("Acme")'
+        )
+        result = detect_party_names(text)
+        assert len(result) >= 1
+        names = {r["name"] for r in result}
+        assert "Acme, Inc." in names
+
+    def test_complex_parenthetical_with_multiple_terms(self):
+        """Parenthetical containing multiple defined terms; only first label extracted."""
+        text = (
+            'Smith Corporation, a Delaware corporation, having its principal '
+            'place of business at 100 Anystreet Way, Suite 100, Anytown, '
+            'North Carolina 27654 ("\u201cSmith,\u201d and together with '
+            'Acme, the \u201cParties,\u201d and each, a \u201cParty\u201d)'
+        )
+        result = detect_party_names(text)
+        assert len(result) >= 1
+        names = {r["name"] for r in result}
+        assert "Smith Corporation" in names
+
+    def test_two_parties_with_intervening_text(self):
+        """Both parties detected when separated by long descriptors."""
+        text = (
+            'This Agreement is entered into by and between '
+            'Acme, Inc., a Delaware corporation, having its principal '
+            'place of business at 123 Oak Ave., Berkeley, California '
+            '95123 ("Acme") and Smith Corporation, a Delaware corporation, '
+            'having its principal place of business at 100 Anystreet Way, '
+            'Suite 100, Anytown, North Carolina 27654 (the "Contractor").'
+        )
+        result = detect_party_names(text)
+        names = {r["name"] for r in result}
+        assert "Acme, Inc." in names
+        assert "Smith Corporation" in names
+        assert len(result) == 2

@@ -278,15 +278,39 @@ _CORPORATE_SUFFIXES = (
 
 _SUFFIX_PATTERN = "|".join(_CORPORATE_SUFFIXES)
 
-# Pattern 1: Defined-term — "Company Name Inc. (the "Label")" or ("Label")
-# Handles both straight quotes (" ") and curly quotes (\u201c \u201d).
+# Phase 1: Find a corporate suffix anchored to one or more preceding
+# capitalized words.  Allows an optional comma between the name and the
+# suffix (e.g. "Acme, Inc.").  Captures the full company name + suffix.
+_COMPANY_SUFFIX_RE = re.compile(
+    rf'((?:[A-Z][A-Za-z&\-\']+ )*'          # zero or more capitalized words
+    rf'(?:[A-Z][A-Za-z&\-\']+),?\s*'         # final name word + optional comma
+    rf'(?:{_SUFFIX_PATTERN})\.?)',            # corporate suffix
+    re.UNICODE,
+)
+
+# Phase 2: Given a suffix match position, scan forward up to 500 chars
+# for a parenthetical label.  Handles optional prefixes like "hereinafter
+# referred to as", "hereinafter", and "the".
+# Captures the first quoted string inside the parentheses.
+_LABEL_AFTER_SUFFIX_RE = re.compile(
+    r'.{0,500}?'                                          # intervening text (non-greedy)
+    r'\('                                                 # opening paren
+    r'(?:(?:hereinafter|hereafter)\s+)?'                  # optional hereinafter
+    r'(?:referred\s+to\s+as\s+)?'                         # optional "referred to as"
+    r'(?:the\s+)?'                                        # optional "the"
+    r'["\u201c]([^"\u201d,]+)[,"]',                       # first quoted label (stop at comma or close quote)
+    re.UNICODE | re.DOTALL,
+)
+
+# Legacy single-pass pattern kept as a fast path for simple cases:
+# "Company Name Inc. (the "Label")"
 _DEFINED_TERM_RE = re.compile(
     rf'((?:[A-Z][A-Za-z&\-\']+ )*(?:{_SUFFIX_PATTERN}))(?:,?)\s+'
     r'(?:\((?:the\s+)?["\u201c]([^"\u201d]+)["\u201d]\))',
     re.UNICODE,
 )
 
-# Pattern 2: "Dear Name," — catches addressee in letter-format agreements.
+# Pattern: "Dear Name," — catches addressee in letter-format agreements.
 _DEAR_RE = re.compile(
     rf'Dear\s+((?:[A-Z][A-Za-z&\-\']+ )*(?:{_SUFFIX_PATTERN})),',
     re.UNICODE,
@@ -342,11 +366,19 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
 
     Searches the first ~2000 characters of the text for:
 
-    1. **Defined-term pattern** — ``Company Name Inc. (the "Label")`` with
-       corporate suffix filtering (Inc., LLC, Corp., Ltd., LLP, etc.).
-       Handles both straight and curly quotes.
+    1. **Two-phase defined-term detection** — first finds a corporate suffix
+       (Inc., LLC, Corp., etc.) anchored to capitalized words, then scans
+       forward up to 500 characters for a parenthetical label like
+       ``(the "Label")``.  This handles common legal drafting where the
+       company name and its defined term are separated by descriptors::
 
-    2. **"Dear Name," pattern** — catches addressee in letter-format
+           Acme, Inc., a Delaware corporation, having its principal
+           place of business at 123 Oak Ave., Berkeley, CA 95123 ("Acme")
+
+    2. **Simple defined-term fast path** — ``Company Name Inc. (the "Label")``
+       for cases where the label immediately follows the suffix.
+
+    3. **"Dear Name," pattern** — catches addressee in letter-format
        agreements, also requiring a corporate suffix.
 
     If a defined-term label appears to be the company name itself (e.g.,
@@ -366,19 +398,33 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
     seen_names: set[str] = set()
     role_index = 0  # tracks which default role label to assign next
 
-    # Pattern 1: Defined terms
+    def _add(name: str, label: str) -> None:
+        nonlocal role_index
+        if name.lower() in seen_names:
+            return
+        seen_names.add(name.lower())
+        if _label_resembles_name(label, name):
+            label = _DEFAULT_ROLE_LABELS[min(role_index, len(_DEFAULT_ROLE_LABELS) - 1)]
+        role_index += 1
+        results.append({"name": name, "label": label})
+
+    # --- Phase 1+2: Find suffix, then scan forward for label ---
+    for suffix_match in _COMPANY_SUFFIX_RE.finditer(preamble):
+        name = suffix_match.group(1).strip().rstrip(",")
+        after = preamble[suffix_match.end():]
+        label_match = _LABEL_AFTER_SUFFIX_RE.match(after)
+        if label_match:
+            label = label_match.group(1).strip().rstrip(",")
+            _add(name, label)
+
+    # --- Fast path: simple adjacent defined terms (catches anything the
+    #     two-phase approach might format-mismatch on) ---
     for match in _DEFINED_TERM_RE.finditer(preamble):
         name = match.group(1).strip()
         label = match.group(2).strip()
-        if name.lower() not in seen_names:
-            seen_names.add(name.lower())
-            # If the label IS the company name, replace with a role label
-            if _label_resembles_name(label, name):
-                label = _DEFAULT_ROLE_LABELS[min(role_index, len(_DEFAULT_ROLE_LABELS) - 1)]
-            role_index += 1
-            results.append({"name": name, "label": label})
+        _add(name, label)
 
-    # Pattern 2: "Dear Name,"
+    # --- "Dear Name," pattern ---
     for match in _DEAR_RE.finditer(preamble):
         name = match.group(1).strip()
         if name.lower() not in seen_names:

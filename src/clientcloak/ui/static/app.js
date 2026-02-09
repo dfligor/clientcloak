@@ -100,7 +100,7 @@ async function downloadFile(url, filename) {
         try {
             const result = await window.pywebview.api.download_file(filename, url);
             if (result && result.success) {
-                showToast('File saved.', 'success');
+                showToast('File saved to Downloads.', 'success');
             } else if (result && result.error !== 'cancelled') {
                 showToast('Could not save file: ' + result.error, 'error');
             }
