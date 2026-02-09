@@ -40,11 +40,6 @@ dev = [
     "pytest-cov>=4.0.0",
     "httpx>=0.26.0",
 ]
-desktop = [
-    "pywebview>=4.0",
-    "pyobjc>=10.0",
-    "pyinstaller>=6.0",
-]
 
 [project.scripts]
 clientcloak = "clientcloak.cli:main"

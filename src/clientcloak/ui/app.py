@@ -11,6 +11,8 @@ import threading
 import webbrowser
 from pathlib import Path
 
+import sys
+
 import structlog
 import uvicorn
 from fastapi import FastAPI, Request
@@ -25,8 +27,16 @@ from .routes.uncloak import router as uncloak_router
 
 logger = structlog.get_logger(__name__)
 
-# Resolve paths relative to this file's directory
-_UI_DIR = Path(__file__).parent
+
+def _get_ui_dir() -> Path:
+    """Resolve UI directory, supporting both development and PyInstaller frozen mode."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / "clientcloak" / "ui"
+    return Path(__file__).parent
+
+
+# Resolve paths — works in both dev and PyInstaller frozen mode
+_UI_DIR = _get_ui_dir()
 _STATIC_DIR = _UI_DIR / "static"
 _TEMPLATES_DIR = _UI_DIR / "templates"
 
