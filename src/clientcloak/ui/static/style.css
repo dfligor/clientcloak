@@ -61,13 +61,13 @@
 }
 
 
-/* ---- Animated Lock Icon ---- */
+/* ---- Animated Processing Icon ---- */
 
-.lock-icon-processing {
-    animation: lockPulseGlow 2s ease-in-out infinite;
+.cloak-icon-processing {
+    animation: cloakPulseGlow 2s ease-in-out infinite;
 }
 
-@keyframes lockPulseGlow {
+@keyframes cloakPulseGlow {
     0%, 100% {
         opacity: 1;
         transform: scale(1);
@@ -80,11 +80,11 @@
     }
 }
 
-.lock-icon-success {
-    animation: lockUnlockBounce 0.5s ease-out forwards;
+.cloak-icon-success {
+    animation: cloakSuccessBounce 0.5s ease-out forwards;
 }
 
-@keyframes lockUnlockBounce {
+@keyframes cloakSuccessBounce {
     0% {
         transform: scale(1) rotate(0deg);
     }

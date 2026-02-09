@@ -380,7 +380,7 @@
                 <!-- What we'll protect -->
                 <div class="p-5 border-b border-gray-100">
                     <div class="flex items-center gap-2 mb-3">
-                        <svg class="w-5 h-5 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                        <svg class="w-5 h-5 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h1M15 13h1M8 17h1M15 17h1"/></svg>
                         <h3 class="text-sm font-semibold text-navy">What we will protect</h3>
                     </div>
                     <div class="space-y-1.5 preview-scroll max-h-48 overflow-y-auto">
@@ -454,7 +454,7 @@
                         @click="executeCloaking()"
                         :disabled="processing"
                         aria-label="Cloak document">
-                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h1M15 13h1M8 17h1M15 17h1"/></svg>
                     Cloak Document
                 </button>
             </div>
@@ -464,9 +464,10 @@
         <!-- ---- Step 3b: Processing ---- -->
         <div x-show="cloakStep === 3.5" class="step-enter max-w-md mx-auto text-center py-8">
             <div class="mb-6">
-                <svg class="w-16 h-16 mx-auto text-teal lock-icon-processing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                    <path d="M7 11V7a5 5 0 0110 0v4"/>
+                <svg class="w-16 h-16 mx-auto text-teal cloak-icon-processing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <path d="M8 13h1M15 13h1M8 17h1M15 17h1"/>
                 </svg>
             </div>
 
@@ -504,7 +505,7 @@
         <!-- ---- Step 4: Success ---- -->
         <div x-show="cloakStep === 4" class="step-enter max-w-2xl mx-auto text-center">
             <div class="mb-2">
-                <svg class="w-12 h-12 mx-auto text-success lock-icon-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <svg class="w-12 h-12 mx-auto text-success cloak-icon-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
                 </svg>
             </div>
@@ -516,8 +517,9 @@
                 <div class="download-card">
                     <div class="mb-4">
                         <svg class="w-10 h-10 mx-auto text-navy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0110 0v4"/>
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <path d="M8 13h1M15 13h1M8 17h1M15 17h1"/>
                         </svg>
                     </div>
                     <h3 class="text-base font-semibold text-navy mb-1">Cloaked Document</h3>
@@ -641,7 +643,7 @@
                 <button class="btn-primary"
                         @click="switchMode('uncloak')"
                         aria-label="Switch to uncloak mode">
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4" opacity="0.4"/></svg>
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
                     Uncloak a Document
                 </button>
                 <button class="btn-secondary"
@@ -691,6 +693,7 @@
                                 <svg class="w-10 h-10 text-navy/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                     <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
                                     <polyline points="14 2 14 8 20 8"/>
+                                    <path d="M8 13h1M15 13h1M8 17h1M15 17h1"/>
                                 </svg>
                                 <div>
                                     <p class="text-sm font-medium text-navy">Edited Document</p>
@@ -751,7 +754,7 @@
                         :disabled="!uncloakRedlinedFile || !uncloakMappingFile || processing"
                         @click="executeUncloaking()"
                         aria-label="Restore original information">
-                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4" opacity="0.4"/></svg>
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
                     Restore Document
                 </button>
             </div>
@@ -761,9 +764,11 @@
         <!-- ---- Step 2: Processing ---- -->
         <div x-show="uncloakStep === 2 && processing" class="step-enter max-w-md mx-auto text-center py-8">
             <div class="mb-6">
-                <svg class="w-16 h-16 mx-auto text-teal lock-icon-processing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                    <path d="M7 11V7a5 5 0 0110 0v4" opacity="0.4"/>
+                <svg class="w-16 h-16 mx-auto text-teal cloak-icon-processing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="8" y1="13" x2="16" y2="13"/>
+                    <line x1="8" y1="17" x2="13" y2="17"/>
                 </svg>
             </div>
             <h2 class="text-lg font-bold text-navy mb-1">Restoring original information...</h2>
@@ -773,7 +778,7 @@
         <!-- ---- Step 2: Success ---- -->
         <div x-show="uncloakStep === 2 && !processing" class="step-enter max-w-lg mx-auto text-center">
             <div class="mb-2">
-                <svg class="w-12 h-12 mx-auto text-success lock-icon-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <svg class="w-12 h-12 mx-auto text-success cloak-icon-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
                 </svg>
             </div>
@@ -804,7 +809,7 @@
             <button class="btn-secondary"
                     @click="resetAll(); switchMode('cloak')"
                     type="button">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h1M15 13h1M8 17h1M15 17h1"/></svg>
                 Cloak Another
             </button>
         </div>
