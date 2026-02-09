@@ -298,7 +298,7 @@ _LABEL_AFTER_SUFFIX_RE = re.compile(
     r'(?:(?:hereinafter|hereafter)\s+)?'                  # optional hereinafter
     r'(?:referred\s+to\s+as\s+)?'                         # optional "referred to as"
     r'(?:the\s+)?'                                        # optional "the"
-    r'["\u201c]([^"\u201d,]+)[,"]',                       # first quoted label (stop at comma or close quote)
+    r'["\u201c]([^"\u201d,]+)[,"\u201d]',                   # first quoted label (stop at comma or close quote)
     re.UNICODE | re.DOTALL,
 )
 
@@ -390,8 +390,13 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
         text: The preamble text to scan (typically first ~2000 chars).
 
     Returns:
-        A list of dicts, each with ``"name"`` and ``"label"`` keys.
-        E.g., ``[{"name": "Making Reign Inc.", "label": "Company"}]``
+        A list of dicts, each with ``"name"``, ``"label"``, and optionally
+        ``"defined_term"`` keys.  When the parenthetical defined term is a
+        short form of the company name (e.g., ``"Acme"`` for
+        ``"Acme Wireless, Inc."``), ``defined_term`` carries that short form
+        so the caller can add it as a replacement variant.
+        E.g., ``[{"name": "Making Reign Inc.", "label": "Company",
+        "defined_term": "Making Reign"}]``
     """
     preamble = text[:2000]
     results: list[dict[str, str]] = []
@@ -403,14 +408,30 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
         if name.lower() in seen_names:
             return
         seen_names.add(name.lower())
+        entry: dict[str, str] = {"name": name, "label": label}
         if _label_resembles_name(label, name):
+            # The defined term is a short form of the name — include it as
+            # a replacement variant so the cloaker replaces it too, but use
+            # a generic role label to avoid exposing the name.
+            entry["defined_term"] = label
             label = _DEFAULT_ROLE_LABELS[min(role_index, len(_DEFAULT_ROLE_LABELS) - 1)]
+            entry["label"] = label
         role_index += 1
-        results.append({"name": name, "label": label})
+        results.append(entry)
+
+    _suffix_strip_re = re.compile(
+        r',?\s*(?:' + _SUFFIX_PATTERN + r')\.?\s*$', re.IGNORECASE,
+    )
+
+    def _is_bare_suffix(name: str) -> bool:
+        """True when the matched name is just a suffix with no real name words."""
+        return not _suffix_strip_re.sub('', name).strip()
 
     # --- Phase 1+2: Find suffix, then scan forward for label ---
     for suffix_match in _COMPANY_SUFFIX_RE.finditer(preamble):
         name = suffix_match.group(1).strip().rstrip(",")
+        if _is_bare_suffix(name):
+            continue
         after = preamble[suffix_match.end():]
         label_match = _LABEL_AFTER_SUFFIX_RE.match(after)
         if label_match:
@@ -421,6 +442,8 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
     #     two-phase approach might format-mismatch on) ---
     for match in _DEFINED_TERM_RE.finditer(preamble):
         name = match.group(1).strip()
+        if _is_bare_suffix(name):
+            continue
         label = match.group(2).strip()
         _add(name, label)
 

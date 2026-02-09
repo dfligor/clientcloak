@@ -948,6 +948,17 @@ function clientCloak() {
                         count: null,
                         checked: true,
                     });
+                    // If the defined term is a short form of the name,
+                    // add it as a separate replacement so it gets cloaked too.
+                    if (party.defined_term && party.defined_term !== party.name) {
+                        this.replacements.push({
+                            text: party.defined_term,
+                            label: '[' + party.label + ']',
+                            type: 'COMPANY',
+                            count: null,
+                            checked: true,
+                        });
+                    }
                 }
 
                 // Add detected entities

@@ -419,3 +419,38 @@ class TestDetectPartyNames:
         assert "Acme, Inc." in names
         assert "Smith Corporation" in names
         assert len(result) == 2
+
+    def test_curly_quotes_correct_label_assignment(self):
+        """Curly-quoted labels are matched correctly (not skipped to next party)."""
+        text = (
+            'Acme Wireless, Inc., a Delaware corporation, having its principal '
+            'place of business at 123 Oak Ave., Berkeley, California '
+            '95123 (\u201cAcme\u201d) and Beta Systems, Inc., a Delaware '
+            'corporation (\u201cBeta,\u201d and together with Acme, '
+            'the \u201cParties\u201d).'
+        )
+        result = detect_party_names(text)
+        assert len(result) == 2
+        by_name = {r["name"]: r for r in result}
+        assert "Acme Wireless, Inc." in by_name
+        assert "Beta Systems, Inc." in by_name
+        # Acme should NOT get Beta's label
+        assert by_name["Acme Wireless, Inc."]["label"] != "Beta"
+
+    def test_defined_term_returned_for_short_form(self):
+        """When the defined term is a short form of the name, it is returned."""
+        text = 'Acme Wireless, Inc. (the \u201cAcme\u201d) agrees.'
+        result = detect_party_names(text)
+        assert len(result) == 1
+        assert result[0]["name"] == "Acme Wireless, Inc."
+        assert result[0]["defined_term"] == "Acme"
+        # Label should be a generic role, not the company name
+        assert result[0]["label"] == "Company"
+
+    def test_no_defined_term_for_role_labels(self):
+        """When the defined term is a role (not a name), no defined_term is returned."""
+        text = 'Acme Wireless, Inc. (the \u201cVendor\u201d) agrees.'
+        result = detect_party_names(text)
+        assert len(result) == 1
+        assert result[0]["label"] == "Vendor"
+        assert "defined_term" not in result[0]
