@@ -209,32 +209,71 @@ def detect_entities(
 # ---------------------------------------------------------------------------
 
 # Corporate suffixes used to identify company names in preamble text.
+# Compound / longer patterns come before shorter ones so the regex
+# alternation matches the most specific form first.
 _CORPORATE_SUFFIXES = (
+    # --- Compound forms (must precede their shorter components) ---
+    r"Pty\.?\s+Ltd\.?",          # Australia
+    r"Public\s+Benefit\s+Corporation",
+    # --- Period-spaced abbreviations (before plain versions) ---
+    r"L\.L\.L\.P\.?",
+    r"P\.L\.L\.C\.?",
+    r"P\.L\.C\.?",
+    r"L\.L\.C\.?",
+    r"L\.L\.P\.?",
+    r"L\.P\.?",
+    r"P\.C\.?",
+    r"S\.R\.L\.?",
+    r"S\.p\.A\.?",
+    r"S\.A\.?",
+    r"G\.P\.?",
+    r"N\.A\.?",
+    r"B\.V\.?",
+    r"K\.K\.?",
+    r"G\.K\.?",
+    # --- Multi-word plain forms ---
+    r"Corporation",
+    r"Company",
+    r"International",
+    # --- Standard US/UK ---
     r"Inc\.?",
     r"LLC",
-    r"Corp\.?",
-    r"Corporation",
-    r"Ltd\.?",
+    r"LLLP",
     r"LLP",
-    r"L\.P\.?",
     r"LP",
-    r"P\.C\.?",
+    r"Corp\.?",
+    r"Ltd\.?",
+    r"Limited",
+    r"PLLC",
+    r"PLC",
+    r"PBC",
     r"PC",
     r"Co\.?",
-    r"Company",
+    r"GP",
+    r"NA",
+    # --- International ---
+    r"GmbH",
+    r"SAS",
+    r"SRL",
+    r"SpA",
+    r"BV",
+    r"SA",
+    r"FSB",
+    r"DST",
+    r"Pty\.?",                   # standalone (after Pty Ltd above)
+    r"Oyj",                      # Finland (public) — before Oy
+    r"Oy",                       # Finland
+    # --- Generic descriptive suffixes ---
     r"Group",
     r"Partners",
     r"Associates",
     r"Enterprises",
     r"Holdings",
-    r"International",
     r"Foundation",
     r"Technologies",
     r"Solutions",
     r"Services",
     r"Systems",
-    r"PBC",
-    r"Public\s+Benefit\s+Corporation",
 )
 
 _SUFFIX_PATTERN = "|".join(_CORPORATE_SUFFIXES)
