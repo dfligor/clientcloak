@@ -263,7 +263,13 @@ def _label_resembles_name(label: str, name: str) -> bool:
 
     Returns True when the label is essentially the company name (or a
     shortened form of it), which would defeat the purpose of cloaking.
-    E.g., name="AiSim Inc." with label="AiSim" -> True.
+
+    Catches exact matches and leading-word subsets::
+
+        name="AiSim Inc."          label="AiSim"       -> True  (exact core)
+        name="BigOrg Group PBC"    label="BigOrg"       -> True  (leading word)
+        name="BigOrg Group PBC"    label="BigOrg Group" -> True  (exact core)
+        name="AiSim Inc."          label="Licensee"     -> False (real role)
     """
     # Strip suffix to get the core name, e.g. "AiSim Inc." -> "AiSim"
     suffix_pattern = re.compile(
@@ -276,7 +282,19 @@ def _label_resembles_name(label: str, name: str) -> bool:
     core_norm = re.sub(r"\s+", " ", core).lower()
     name_norm = re.sub(r"\s+", " ", name.strip()).lower()
 
-    return label_norm in (core_norm, name_norm) or core_norm == label_norm
+    # Exact match with core or full name
+    if label_norm in (core_norm, name_norm) or core_norm == label_norm:
+        return True
+
+    # Label is a leading-word subset of the core name.
+    # e.g., "BigOrg" is the first word of "BigOrg Group".
+    label_words = label_norm.split()
+    core_words = core_norm.split()
+    if label_words and len(label_words) < len(core_words):
+        if core_words[: len(label_words)] == label_words:
+            return True
+
+    return False
 
 
 def detect_party_names(text: str) -> list[dict[str, str]]:

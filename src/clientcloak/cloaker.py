@@ -49,7 +49,8 @@ def _build_cloak_replacements(config: CloakConfig) -> dict[str, str]:
         mappings[f"[{alias.label}]"] = alias.name
     mappings.update(config.additional_replacements)
 
-    return {original: placeholder for placeholder, original in mappings.items()}
+    base = {original: placeholder for placeholder, original in mappings.items()}
+    return _expand_content_replacements(base)
 
 
 def _strip_corporate_suffix(name: str) -> str:
@@ -207,6 +208,10 @@ def cloak_document(
     cloak_replacements: dict[str, str] = {
         original: placeholder for placeholder, original in mappings.items()
     }
+
+    # Expand with suffix-stripped variants so shortened references in the
+    # document body (e.g. "AiSim" for "AiSim Inc.") are also replaced.
+    cloak_replacements = _expand_content_replacements(cloak_replacements)
 
     # --- 3b. Sanitize the output filename ---
     # Party names may appear in the filename (e.g. "Acme_BigCo_NDA.docx").
