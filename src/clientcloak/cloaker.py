@@ -67,17 +67,30 @@ def _strip_corporate_suffix(name: str) -> str:
 
 
 def _expand_content_replacements(cloak_replacements: dict[str, str]) -> dict[str, str]:
-    """Expand replacements with suffix-stripped variants for comment sanitization.
+    """Expand replacements with suffix-stripped variants.
 
-    For each party name like "Making Reign Inc.", also adds the stripped form
-    "Making Reign" mapping to the same placeholder, so shortened references
-    in comments are caught.  Existing entries are never overwritten.
+    For each party name like "BigOrg Group PBC", iteratively strips corporate
+    suffixes to produce all shortened forms::
+
+        "BigOrg Group PBC" -> "BigOrg Group" -> "BigOrg"
+
+    Each intermediate form is added as a replacement mapping to the same
+    placeholder, so shortened references and defined terms in the document
+    body, comments, and filenames are all caught.
+
+    Existing entries are never overwritten, and stripping stops when the
+    name is fully consumed (single word with a suffix, e.g. "Partners").
     """
     expanded = dict(cloak_replacements)
     for original, placeholder in cloak_replacements.items():
-        stripped = _strip_corporate_suffix(original)
-        if stripped and stripped != original and stripped not in expanded:
-            expanded[stripped] = placeholder
+        current = original
+        while True:
+            stripped = _strip_corporate_suffix(current)
+            if not stripped or stripped == current:
+                break
+            if stripped not in expanded:
+                expanded[stripped] = placeholder
+            current = stripped
     return expanded
 
 
