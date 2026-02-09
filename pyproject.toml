@@ -48,5 +48,11 @@ clientcloak-ui = "clientcloak.ui.app:start_server"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+clientcloak = [
+    "ui/static/**/*",
+    "ui/templates/**/*",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
