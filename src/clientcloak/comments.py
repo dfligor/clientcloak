@@ -32,8 +32,18 @@ import zipfile
 from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree as ET
+from xml.sax.saxutils import escape as xml_escape
 
 from .models import CommentAuthor, CommentInfo, CommentMode
+
+
+def _escape_xml_attr(value: str) -> str:
+    """Escape a string for safe inclusion in an XML attribute value.
+
+    Handles ``&``, ``<``, ``>``, ``"``, and ``'`` so the value cannot break
+    out of a quoted attribute.
+    """
+    return xml_escape(value, {'"': "&quot;", "'": "&apos;"})
 
 # ---------------------------------------------------------------------------
 # XML namespaces
@@ -275,8 +285,10 @@ def restore_comment_authors(
                     if author_match:
                         label = author_match.group(1)
                         if label in author_mapping:
-                            original_name = author_mapping[label]
-                            original_initials = generate_initials(original_name)
+                            original_name = _escape_xml_attr(author_mapping[label])
+                            original_initials = _escape_xml_attr(
+                                generate_initials(author_mapping[label])
+                            )
                             tag = re.sub(
                                 r'w:author="[^"]*"',
                                 f'w:author="{original_name}"',
@@ -419,8 +431,10 @@ def _anonymize_comments(
         if author_match:
             original_author = author_match.group(1)
             if original_author in effective_mapping:
-                new_label = effective_mapping[original_author]
-                new_initials = generate_initials(new_label)
+                new_label = _escape_xml_attr(effective_mapping[original_author])
+                new_initials = _escape_xml_attr(
+                    generate_initials(effective_mapping[original_author])
+                )
                 tag = re.sub(r'w:author="[^"]*"', f'w:author="{new_label}"', tag)
                 tag = re.sub(r'w:initials="[^"]*"', f'w:initials="{new_initials}"', tag)
         return tag
@@ -429,13 +443,16 @@ def _anonymize_comments(
 
     # Apply content replacements (SANITIZE mode)
     # Case-insensitive, longest-first to prevent partial-match clobbering.
+    # Replacement values are XML-escaped to prevent injection into the
+    # raw XML string.
     if content_replacements:
         sorted_replacements = sorted(
             content_replacements.items(), key=lambda kv: len(kv[0]), reverse=True
         )
         for original, replacement in sorted_replacements:
+            safe_replacement = xml_escape(replacement)
             xml_str = re.sub(
-                re.escape(original), lambda _, r=replacement: r, xml_str,
+                re.escape(original), lambda _, r=safe_replacement: r, xml_str,
                 flags=re.IGNORECASE,
             )
 

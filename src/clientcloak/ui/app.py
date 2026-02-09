@@ -19,6 +19,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from .. import __version__
 from ..sessions import cleanup_expired_sessions
@@ -41,6 +43,27 @@ _STATIC_DIR = _UI_DIR / "static"
 _TEMPLATES_DIR = _UI_DIR / "templates"
 
 
+class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security-related HTTP headers to every response."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-src 'self'"
+        )
+        return response
+
+
 def create_app() -> FastAPI:
     """
     Create and configure the FastAPI application.
@@ -56,6 +79,9 @@ def create_app() -> FastAPI:
         description="Bidirectional document sanitization for safe AI contract review.",
         version=__version__,
     )
+
+    # --- Security headers ---
+    application.add_middleware(_SecurityHeadersMiddleware)
 
     # --- Mount static files ---
     _STATIC_DIR.mkdir(parents=True, exist_ok=True)

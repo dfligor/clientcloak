@@ -25,6 +25,9 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
+# Maximum upload file size: 100 MB (server-side enforcement).
+_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
 
 @router.post("/upload")
 async def upload_document(file: UploadFile = File(...)):
@@ -45,7 +48,7 @@ async def upload_document(file: UploadFile = File(...)):
     if not file.filename.lower().endswith(".docx"):
         raise HTTPException(
             status_code=400,
-            detail=f"Only .docx files are accepted. Got: {file.filename}",
+            detail="Only .docx files are accepted.",
         )
 
     # --- Create session and save file ---
@@ -58,6 +61,11 @@ async def upload_document(file: UploadFile = File(...)):
     try:
         upload_path = get_session_file(session_id, "original.docx")
         content = await file.read()
+        if len(content) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="File too large. Maximum upload size is 100 MB.",
+            )
         upload_path.write_bytes(content)
         logger.info("File uploaded", session_id=session_id, filename=file.filename)
     except Exception as exc:
@@ -69,7 +77,10 @@ async def upload_document(file: UploadFile = File(...)):
         doc = load_document(upload_path)
     except Exception as exc:
         logger.error("Failed to load document", session_id=session_id, error=str(exc))
-        raise HTTPException(status_code=400, detail=f"Failed to load document: {exc}") from exc
+        raise HTTPException(
+            status_code=400,
+            detail="Failed to load document. Ensure it is a valid .docx file.",
+        ) from exc
 
     # Security scan
     try:
@@ -194,7 +205,7 @@ async def detect_entities_route(
         )
     except Exception as exc:
         logger.error("Entity detection failed", session_id=session_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=f"Entity detection failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Entity detection failed.") from exc
 
     return JSONResponse(content=[e.model_dump() for e in entities])
 
@@ -296,10 +307,10 @@ async def cloak(
             replacements=result.replacements_applied,
         )
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail="Source file not found.") from exc
     except Exception as exc:
         logger.error("Cloaking failed", session_id=session_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=f"Cloaking failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Cloaking failed. Please try again.") from exc
 
     # --- Save cloak replacements for download filename sanitization ---
     try:

@@ -10,6 +10,7 @@ Session IDs are 8-character UUID prefixes -- short enough for URLs and
 log messages, long enough to avoid collisions in practice.
 """
 
+import re
 import shutil
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,12 @@ from .paths import get_sessions_dir
 
 SESSION_TTL = timedelta(hours=24)
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
+
+# Session IDs must be exactly 8 lowercase hex characters.
+_SESSION_ID_RE = re.compile(r"^[a-f0-9]{8}$")
+
+# Filenames inside sessions must be simple names (no path separators or traversal).
+_SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
 def create_session() -> str:
@@ -56,9 +63,17 @@ def get_session_dir(session_id: str) -> Path:
         The ``Path`` to the session directory.
 
     Raises:
-        ValueError: If no session directory exists for the given ID.
+        ValueError: If the session ID is malformed or no session directory
+            exists for the given ID.
     """
+    if not _SESSION_ID_RE.match(session_id):
+        raise ValueError(f"Session not found: {session_id}")
     session_dir = get_sessions_dir() / session_id
+    # Resolve to catch any symlink-based traversal and verify containment.
+    sessions_root = get_sessions_dir().resolve()
+    resolved = session_dir.resolve()
+    if not str(resolved).startswith(str(sessions_root) + "/") and resolved != sessions_root:
+        raise ValueError(f"Session not found: {session_id}")
     if not session_dir.is_dir():
         raise ValueError(f"Session not found: {session_id}")
     return session_dir
@@ -83,6 +98,8 @@ def get_session_file(session_id: str, filename: str) -> Path:
         ValueError: If the session directory does not exist (delegated to
             ``get_session_dir``).
     """
+    if not _SAFE_FILENAME_RE.match(filename):
+        raise ValueError(f"Invalid session filename: {filename}")
     return get_session_dir(session_id) / filename
 
 

@@ -19,6 +19,10 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
+# Maximum upload file sizes (server-side enforcement).
+_MAX_DOCX_BYTES = 100 * 1024 * 1024   # 100 MB
+_MAX_MAPPING_BYTES = 10 * 1024 * 1024  # 10 MB
+
 
 @router.post("/uncloak")
 async def uncloak(
@@ -42,7 +46,7 @@ async def uncloak(
     if not redlined_file.filename.lower().endswith(".docx"):
         raise HTTPException(
             status_code=400,
-            detail=f"Redlined file must be .docx. Got: {redlined_file.filename}",
+            detail="Redlined file must be .docx.",
         )
 
     # --- Validate mapping file type ---
@@ -52,7 +56,7 @@ async def uncloak(
     if not mapping_file.filename.lower().endswith(".json"):
         raise HTTPException(
             status_code=400,
-            detail=f"Mapping file must be .json. Got: {mapping_file.filename}",
+            detail="Mapping file must be .json.",
         )
 
     # --- Create session and save files ---
@@ -65,17 +69,25 @@ async def uncloak(
     try:
         redlined_path = get_session_file(session_id, "redlined.docx")
         redlined_content = await redlined_file.read()
+        if len(redlined_content) > _MAX_DOCX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Document too large. Maximum upload size is 100 MB.",
+            )
         redlined_path.write_bytes(redlined_content)
 
         mapping_path = get_session_file(session_id, "mapping.json")
         mapping_content = await mapping_file.read()
+        if len(mapping_content) > _MAX_MAPPING_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Mapping file too large. Maximum size is 10 MB.",
+            )
         mapping_path.write_bytes(mapping_content)
 
         logger.info(
             "Files uploaded for uncloaking",
             session_id=session_id,
-            redlined=redlined_file.filename,
-            mapping=mapping_file.filename,
         )
     except Exception as exc:
         logger.error("Failed to save uploaded files", session_id=session_id, error=str(exc))
@@ -96,10 +108,10 @@ async def uncloak(
             replacements_restored=replacements_restored,
         )
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail="Source file not found.") from exc
     except Exception as exc:
         logger.error("Uncloaking failed", session_id=session_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=f"Uncloaking failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Uncloaking failed. Please try again.") from exc
 
     # --- Compute restored filename ---
     # Apply the mapping (placeholder -> original) to the uploaded filename
