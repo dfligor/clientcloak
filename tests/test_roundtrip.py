@@ -9,7 +9,7 @@ import pytest
 from pathlib import Path
 from docx import Document
 
-from clientcloak.cloaker import cloak_document, sanitize_filename, sanitize_filename_for_config, _build_cloak_replacements, _expand_content_replacements
+from clientcloak.cloaker import cloak_document, sanitize_filename, sanitize_filename_for_config, _build_cloak_replacements, _expand_content_replacements, _make_short_placeholder
 from clientcloak.uncloaker import uncloak_document
 from clientcloak.docx_handler import load_document, extract_all_text
 from clientcloak.models import CloakConfig, CommentMode, PartyAlias
@@ -505,3 +505,126 @@ class TestExpandContentReplacements:
         replacements = {"Software Experts LLC": "[Vendor]"}
         expanded = _expand_content_replacements(replacements)
         assert "Software Experts" in expanded
+
+
+# ===================================================================
+# Short-form placeholder tests
+# ===================================================================
+
+class TestShortFormPlaceholders:
+    """Verify that suffix-stripped variants get distinct -Short placeholders."""
+
+    def test_defined_term_short_form_roundtrip(self, tmp_path):
+        """
+        'AiSim Inc. ("AiSim")' should round-trip losslessly.
+
+        Cloaked: '[Company] ("[Company-Short]")'
+        Mapping: [Company] -> AiSim Inc., [Company-Short] -> AiSim
+        Uncloaked: 'AiSim Inc. ("AiSim")'
+        """
+        paragraphs = [
+            'AiSim Inc. ("AiSim") agrees to the terms.',
+            "AiSim Inc. shall deliver the goods.",
+            "AiSim shall comply with all regulations.",
+        ]
+        input_path = make_simple_docx(tmp_path / "defined_term.docx", paragraphs)
+        cloaked_path = tmp_path / "cloaked.docx"
+        mapping_path = tmp_path / "mapping.json"
+        uncloaked_path = tmp_path / "uncloaked.docx"
+
+        config = CloakConfig(
+            party_a_name="AiSim Inc.",
+            party_a_label="Company",
+            party_b_name="OtherCorp LLC",
+            party_b_label="Vendor",
+            strip_metadata=True,
+        )
+
+        result = cloak_document(input_path, cloaked_path, mapping_path, config)
+        assert result.replacements_applied > 0
+
+        # Verify cloaked text has distinct placeholders
+        cloaked_doc = load_document(cloaked_path)
+        cloaked_text = " ".join(p.text for p in cloaked_doc.paragraphs)
+        assert "[Company]" in cloaked_text
+        assert "[Company-Short]" in cloaked_text
+
+        # Verify mapping has both entries
+        import json
+        mapping_data = json.loads(mapping_path.read_text())
+        assert mapping_data["mappings"]["[Company]"] == "AiSim Inc."
+        assert mapping_data["mappings"]["[Company-Short]"] == "AiSim"
+
+        # Uncloak and verify lossless round-trip
+        uncloak_document(cloaked_path, uncloaked_path, mapping_path)
+        uncloaked_doc = load_document(uncloaked_path)
+        uncloaked_texts = [p.text for p in uncloaked_doc.paragraphs if p.text.strip()]
+
+        assert 'AiSim Inc. ("AiSim") agrees to the terms.' == uncloaked_texts[0]
+        assert "AiSim Inc. shall deliver the goods." == uncloaked_texts[1]
+        assert "AiSim shall comply with all regulations." == uncloaked_texts[2]
+
+    def test_multi_level_suffix_strip_variants(self, tmp_path):
+        """
+        'BigOrg Group PBC' produces two suffix-stripped variants:
+        - 'BigOrg Group' -> [Vendor-Short]
+        - 'BigOrg' -> [Vendor-Short-2]
+        """
+        paragraphs = [
+            "BigOrg Group PBC is the vendor.",
+            "BigOrg Group shall deliver.",
+            "BigOrg shall comply.",
+        ]
+        input_path = make_simple_docx(tmp_path / "multi_strip.docx", paragraphs)
+        cloaked_path = tmp_path / "cloaked.docx"
+        mapping_path = tmp_path / "mapping.json"
+        uncloaked_path = tmp_path / "uncloaked.docx"
+
+        config = CloakConfig(
+            party_a_name="BigOrg Group PBC",
+            party_a_label="Vendor",
+            party_b_name="SmallCo Inc.",
+            party_b_label="Customer",
+            strip_metadata=True,
+        )
+
+        result = cloak_document(input_path, cloaked_path, mapping_path, config)
+        assert result.replacements_applied > 0
+
+        # Verify cloaked text
+        cloaked_doc = load_document(cloaked_path)
+        cloaked_text = " ".join(p.text for p in cloaked_doc.paragraphs)
+        assert "[Vendor]" in cloaked_text
+        assert "[Vendor-Short]" in cloaked_text
+        assert "[Vendor-Short-2]" in cloaked_text
+
+        # Verify mapping
+        import json
+        mapping_data = json.loads(mapping_path.read_text())
+        assert mapping_data["mappings"]["[Vendor]"] == "BigOrg Group PBC"
+        assert mapping_data["mappings"]["[Vendor-Short]"] == "BigOrg Group"
+        assert mapping_data["mappings"]["[Vendor-Short-2]"] == "BigOrg"
+
+        # Uncloak and verify lossless round-trip
+        uncloak_document(cloaked_path, uncloaked_path, mapping_path)
+        uncloaked_doc = load_document(uncloaked_path)
+        uncloaked_texts = [p.text for p in uncloaked_doc.paragraphs if p.text.strip()]
+
+        assert "BigOrg Group PBC is the vendor." == uncloaked_texts[0]
+        assert "BigOrg Group shall deliver." == uncloaked_texts[1]
+        assert "BigOrg shall comply." == uncloaked_texts[2]
+
+    def test_make_short_placeholder_basic(self):
+        """_make_short_placeholder generates [Label-Short] from [Label]."""
+        result = _make_short_placeholder("[Vendor]", set())
+        assert result == "[Vendor-Short]"
+
+    def test_make_short_placeholder_collision(self):
+        """Collisions produce -Short-2, -Short-3, etc."""
+        existing = {"[Vendor-Short]"}
+        result = _make_short_placeholder("[Vendor]", existing)
+        assert result == "[Vendor-Short-2]"
+
+        existing.add("[Vendor-Short-2]")
+        result = _make_short_placeholder("[Vendor]", existing)
+        assert result == "[Vendor-Short-3]"

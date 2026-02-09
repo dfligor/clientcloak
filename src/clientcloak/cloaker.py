@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 from .comments import process_comments
+from .detector import _SUFFIX_PATTERN
 from .docx_handler import (
     extract_all_text,
     load_document,
@@ -54,16 +55,32 @@ def _build_cloak_replacements(config: CloakConfig) -> dict[str, str]:
 
 
 def _strip_corporate_suffix(name: str) -> str:
-    """Strip trailing corporate suffixes like Inc., LLC, Corp., etc."""
+    """Strip trailing corporate suffixes like Inc., LLC, Corp., GmbH, etc."""
     return re.sub(
-        r"\s+(?:Inc\.?|LLC|Corp\.?|Corporation|Ltd\.?|LLP|L\.P\.?|LP|"
-        r"P\.C\.?|PC|Co\.?|Company|Group|Partners|Associates|"
-        r"Enterprises|Holdings|International|Foundation|Technologies|"
-        r"Solutions|Services|Systems|PBC|Public\s+Benefit\s+Corporation)\s*$",
+        rf"\s+(?:{_SUFFIX_PATTERN})\s*$",
         "",
         name,
         flags=re.IGNORECASE,
     ).strip()
+
+
+def _make_short_placeholder(
+    base_placeholder: str, existing_placeholders: set[str]
+) -> str:
+    """Create a ``-Short`` variant of a bracketed placeholder.
+
+    Given ``[Vendor]``, returns ``[Vendor-Short]``.  If that already exists in
+    *existing_placeholders*, tries ``[Vendor-Short-2]``, ``[Vendor-Short-3]``,
+    etc., until a unique name is found.
+    """
+    label = base_placeholder.strip("[]")
+    candidate = f"[{label}-Short]"
+    if candidate not in existing_placeholders:
+        return candidate
+    n = 2
+    while f"[{label}-Short-{n}]" in existing_placeholders:
+        n += 1
+    return f"[{label}-Short-{n}]"
 
 
 def _expand_content_replacements(cloak_replacements: dict[str, str]) -> dict[str, str]:
@@ -232,6 +249,22 @@ def cloak_document(
     # party identities.
     sanitized_stem = sanitize_filename(output_path.stem, cloak_replacements)
     output_path = output_path.with_name(sanitized_stem + output_path.suffix)
+
+    # --- 3c. Assign distinct placeholders to suffix-stripped variants ---
+    # After expansion, variants like "AiSim" (from "AiSim Inc.") share the
+    # same placeholder "[Company]".  Give each variant its own "-Short"
+    # placeholder so the mapping file can restore them independently.
+    # This runs AFTER filename sanitization (which benefits from shared
+    # placeholders) but BEFORE the document replacement pass.
+    base_originals = set(mappings.values())
+    existing_placeholders = set(mappings.keys())
+    for original in list(cloak_replacements.keys()):
+        if original not in base_originals:
+            old_placeholder = cloak_replacements[original]
+            new_placeholder = _make_short_placeholder(old_placeholder, existing_placeholders)
+            cloak_replacements[original] = new_placeholder
+            mappings[new_placeholder] = original
+            existing_placeholders.add(new_placeholder)
 
     # --- 4. Apply replacements ---
     replacement_count = replace_text_in_document(doc, cloak_replacements)
