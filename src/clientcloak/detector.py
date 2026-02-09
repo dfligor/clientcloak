@@ -162,6 +162,9 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
         end_pos = match.end()
         if end_pos < len(text) and text[end_pos].isalpha():
             continue
+        # Skip agreement references like "Transition Services Agreement"
+        if _followed_by_agreement_term(text, end_pos):
+            continue
         name = match.group(1).strip().rstrip(",").rstrip(".")
         # Skip bare suffixes (e.g. just "Services" with no real name words)
         if not _bare_suffix_re.sub('', name).strip():
@@ -358,6 +361,28 @@ _DEAR_RE = re.compile(
 _DEFAULT_ROLE_LABELS = ("Company", "Counterparty")
 
 
+# Common legal document-type terms.  When one of these words immediately
+# follows a corporate suffix match, the match is an agreement/document
+# reference (e.g. "Transition Services Agreement") rather than a company
+# name.  Real companies like "Acme Services, LLC" match on "LLC" (not
+# "Services") so are unaffected by this filter.
+_AGREEMENT_TYPE_TERMS = frozenset({
+    "agreement", "contract", "plan", "schedule", "letter",
+    "memorandum", "arrangement", "deed", "order", "addendum",
+    "amendment", "supplement", "policy", "program", "handbook",
+    "manual", "notice", "certificate", "indenture", "warrant",
+    "lease", "sublease", "license", "note", "bond", "protocol",
+})
+
+_NEXT_WORD_RE = re.compile(r'\s+([A-Za-z]+)')
+
+
+def _followed_by_agreement_term(text: str, end_pos: int) -> bool:
+    """Return True if the next word after *end_pos* is a legal document type."""
+    m = _NEXT_WORD_RE.match(text, end_pos)
+    return bool(m and m.group(1).lower() in _AGREEMENT_TYPE_TERMS)
+
+
 def _is_abbreviation(label: str, name: str) -> bool:
     """Check if label appears to be an abbreviation or acronym of name.
 
@@ -501,8 +526,16 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
 
     # --- Phase 1+2: Find suffix, then scan forward for label ---
     for suffix_match in _COMPANY_SUFFIX_RE.finditer(preamble):
+        # Word boundary check: "Co" in "Contract" is not a real suffix.
+        end_pos = suffix_match.end()
+        if end_pos < len(preamble) and preamble[end_pos].isalpha():
+            continue
         name = suffix_match.group(1).strip().rstrip(",")
         if _is_bare_suffix(name):
+            continue
+        # "Transition Services Agreement" is an agreement reference, not a
+        # company.  Skip when the next word is a legal document type.
+        if _followed_by_agreement_term(preamble, end_pos):
             continue
         after = preamble[suffix_match.end():]
         label_match = _LABEL_AFTER_SUFFIX_RE.match(after)
@@ -513,6 +546,9 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
     # --- Fast path: simple adjacent defined terms (catches anything the
     #     two-phase approach might format-mismatch on) ---
     for match in _DEFINED_TERM_RE.finditer(preamble):
+        end_pos = match.start(1) + len(match.group(1))
+        if end_pos < len(preamble) and preamble[end_pos].isalpha():
+            continue
         name = match.group(1).strip()
         if _is_bare_suffix(name):
             continue

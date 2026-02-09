@@ -454,3 +454,18 @@ class TestDetectPartyNames:
         assert len(result) == 1
         assert result[0]["label"] == "Vendor"
         assert "defined_term" not in result[0]
+
+    def test_agreement_reference_not_detected_as_party(self):
+        """'Transition Services Agreement' should not yield a party named 'Transition Services'."""
+        text = (
+            'This Transition Services Agreement dated January 1, 2026 '
+            '(the "Prior Agreement") is entered into by Acme Corp. '
+            '(the "Company") and Beta LLC (the "Vendor").'
+        )
+        result = detect_party_names(text)
+        names = {r["name"] for r in result}
+        assert "Transition Services" not in names, (
+            f"Agreement reference mistakenly detected: {names}"
+        )
+        assert "Acme Corp." in names
+        assert "Beta LLC" in names

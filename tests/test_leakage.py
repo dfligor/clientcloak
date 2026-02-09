@@ -485,3 +485,91 @@ def test_company_detection_catches_third_parties(tmp_path):
     for name in company_names:
         assert "TrueNorth" not in name, f"Primary party leaked: {name}"
         assert "Bright Horizon" not in name, f"Primary party leaked: {name}"
+
+
+# ---------------------------------------------------------------------------
+# Test: agreement-type terms not mistaken for company names
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "Transition Services Agreement",
+        "Professional Services Agreement",
+        "Advisory Services Letter",
+        "Management Services Contract",
+        "Technology Solutions Plan",
+        "Payment Services Arrangement",
+        "Cloud Solutions License",
+        "Consulting Services Addendum",
+    ],
+    ids=[
+        "transition_services", "professional_services", "advisory_services",
+        "management_services", "technology_solutions", "payment_services",
+        "cloud_solutions", "consulting_services",
+    ],
+)
+def test_agreement_reference_not_detected_as_party(phrase):
+    """Phrases like 'Transition Services Agreement' should not be detected as parties."""
+    preamble = (
+        f'This {phrase}, dated January 1, 2026 (the "Prior Agreement"), '
+        f'is entered into by Acme Corp. (the "Company") and Beta LLC (the "Vendor").'
+    )
+    parties = detect_party_names(preamble)
+    party_names = {p["name"] for p in parties}
+    # The agreement reference should NOT appear as a party
+    # Extract the would-be company name (everything before the document type word)
+    for p in parties:
+        assert "Services" not in p["name"] or "Acme" in p["name"] or "Beta" in p["name"], (
+            f"Agreement reference '{phrase}' was mistakenly detected as party: {p}"
+        )
+    # The real parties should still be detected
+    assert "Acme Corp." in party_names, f"Acme not found in {party_names}"
+    assert "Beta LLC" in party_names, f"Beta not found in {party_names}"
+
+
+def test_agreement_reference_not_detected_as_company(tmp_path):
+    """Full-document company detection should skip agreement references."""
+    paragraphs = [
+        'This Transition Services Agreement is between Acme Corp. ("Company") '
+        'and Beta LLC ("Vendor").',
+        "The Professional Services Contract governs all deliverables.",
+        "Adventura Holdings, LLC provided financing for the project.",
+    ]
+    docx_path = _make_docx(tmp_path, "test.docx", paragraphs)
+    doc = load_document(docx_path)
+    full_text = "\n".join(text for text, _source in extract_all_text(doc))
+
+    entities = detect_entities(
+        full_text,
+        party_names=["Acme Corp.", "Beta LLC"],
+    )
+    company_entities = [e for e in entities if e.entity_type == "COMPANY"]
+    company_names = {e.text for e in company_entities}
+
+    # "Transition Services" and "Professional Services" should NOT appear
+    for name in company_names:
+        assert "Transition" not in name, (
+            f"Agreement reference detected as company: {name}"
+        )
+        assert "Professional" not in name, (
+            f"Agreement reference detected as company: {name}"
+        )
+    # Real third-party company should still be caught
+    assert "Adventura Holdings, LLC" in company_names, (
+        f"Adventura not detected. Found: {company_names}"
+    )
+
+
+def test_real_company_with_services_suffix_still_detected():
+    """A real company like 'Acme Services, LLC' should still be detected."""
+    preamble = (
+        'Agreement between Acme Services, LLC, a Delaware limited liability '
+        'company ("Acme"), and Beta Corp. (the "Client").'
+    )
+    parties = detect_party_names(preamble)
+    party_names = {p["name"] for p in parties}
+    assert "Acme Services, LLC" in party_names, (
+        f"Real company not detected: {party_names}"
+    )
