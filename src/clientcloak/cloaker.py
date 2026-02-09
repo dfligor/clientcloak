@@ -58,7 +58,7 @@ def _strip_corporate_suffix(name: str) -> str:
         r"\s+(?:Inc\.?|LLC|Corp\.?|Corporation|Ltd\.?|LLP|L\.P\.?|LP|"
         r"P\.C\.?|PC|Co\.?|Company|Group|Partners|Associates|"
         r"Enterprises|Holdings|International|Foundation|Technologies|"
-        r"Solutions|Services|Systems)\s*$",
+        r"Solutions|Services|Systems|PBC|Public\s+Benefit\s+Corporation)\s*$",
         "",
         name,
         flags=re.IGNORECASE,

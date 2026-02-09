@@ -233,6 +233,8 @@ _CORPORATE_SUFFIXES = (
     r"Solutions",
     r"Services",
     r"Systems",
+    r"PBC",
+    r"Public\s+Benefit\s+Corporation",
 )
 
 _SUFFIX_PATTERN = "|".join(_CORPORATE_SUFFIXES)
@@ -252,6 +254,31 @@ _DEAR_RE = re.compile(
 )
 
 
+# Default role labels assigned when the defined term is the company name itself.
+_DEFAULT_ROLE_LABELS = ("Company", "Counterparty")
+
+
+def _label_resembles_name(label: str, name: str) -> bool:
+    """Check if a defined-term label is derived from the company name itself.
+
+    Returns True when the label is essentially the company name (or a
+    shortened form of it), which would defeat the purpose of cloaking.
+    E.g., name="AiSim Inc." with label="AiSim" -> True.
+    """
+    # Strip suffix to get the core name, e.g. "AiSim Inc." -> "AiSim"
+    suffix_pattern = re.compile(
+        r"\s+(?:" + _SUFFIX_PATTERN + r")\s*$",
+        re.IGNORECASE,
+    )
+    core = suffix_pattern.sub("", name).strip()
+    # Compare case-insensitively, ignoring whitespace differences
+    label_norm = re.sub(r"\s+", " ", label.strip()).lower()
+    core_norm = re.sub(r"\s+", " ", core).lower()
+    name_norm = re.sub(r"\s+", " ", name.strip()).lower()
+
+    return label_norm in (core_norm, name_norm) or core_norm == label_norm
+
+
 def detect_party_names(text: str) -> list[dict[str, str]]:
     """
     Detect company/party names from a legal preamble using defined-term patterns.
@@ -265,6 +292,11 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
     2. **"Dear Name," pattern** — catches addressee in letter-format
        agreements, also requiring a corporate suffix.
 
+    If a defined-term label appears to be the company name itself (e.g.,
+    ``AiSim Inc. (the "AiSim")``), it is replaced with a generic role
+    label ("Company", "Counterparty") since using the name as the label
+    would defeat the purpose of cloaking.
+
     Args:
         text: The preamble text to scan (typically first ~2000 chars).
 
@@ -275,6 +307,7 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
     preamble = text[:2000]
     results: list[dict[str, str]] = []
     seen_names: set[str] = set()
+    role_index = 0  # tracks which default role label to assign next
 
     # Pattern 1: Defined terms
     for match in _DEFINED_TERM_RE.finditer(preamble):
@@ -282,6 +315,10 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
         label = match.group(2).strip()
         if name.lower() not in seen_names:
             seen_names.add(name.lower())
+            # If the label IS the company name, replace with a role label
+            if _label_resembles_name(label, name):
+                label = _DEFAULT_ROLE_LABELS[min(role_index, len(_DEFAULT_ROLE_LABELS) - 1)]
+            role_index += 1
             results.append({"name": name, "label": label})
 
     # Pattern 2: "Dear Name,"
