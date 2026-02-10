@@ -128,8 +128,10 @@ async def upload_document(file: UploadFile = File(...)):
         non_empty = [text for text, _source in text_fragments if text.strip()]
         preamble_text = "\n".join(non_empty[:5])
 
-        # Detect entities (no party name filtering yet — that happens at cloak time)
-        entities = await asyncio.to_thread(detect_entities, full_text)
+        # Filter entities using detected party names to avoid duplicates
+        # (e.g. "VENTMARKET, LLC" in signature blocks vs "VentMarket, LLC")
+        party_names_for_filter = [p["name"] for p in suggested_parties]
+        entities = await asyncio.to_thread(detect_entities, full_text, party_names=party_names_for_filter)
         detected_entities = [e.model_dump() for e in entities]
 
         # Detect party names from preamble

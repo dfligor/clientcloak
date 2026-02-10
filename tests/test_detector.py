@@ -278,6 +278,17 @@ class TestPartyNameFiltering:
         emails = [e for e in result if e.entity_type == "EMAIL"]
         assert len(emails) == 1
 
+    def test_filters_allcaps_party_variant(self):
+        """ALL-CAPS variants of party names should be filtered by case-insensitive match."""
+        text = (
+            "VentMarket, LLC agrees to the terms.\n"
+            "VENTMARKET, LLC\nBy: _______________"
+        )
+        result = detect_entities(text, party_names=["VentMarket, LLC"])
+        company_texts = [e.text for e in result if e.entity_type == "COMPANY"]
+        assert "VENTMARKET, LLC" not in company_texts
+        assert "VentMarket, LLC" not in company_texts
+
 
 # ===================================================================
 # Unified detect_entities()
@@ -312,6 +323,52 @@ class TestDetectEntities:
         amount_100 = [e for e in amounts if e.text == "$100"]
         assert len(amount_100) == 1
         assert amount_100[0].count == 2
+
+
+# ===================================================================
+# COMPANY entity case-insensitive dedup
+# ===================================================================
+
+class TestCompanyCaseDedup:
+
+    def test_allcaps_and_mixedcase_merge(self):
+        """ALL-CAPS company name should merge with mixed-case form."""
+        text = (
+            "VentMarket, LLC provides HVAC services.\n"
+            "VENTMARKET, LLC\nBy: _______________"
+        )
+        entities = detect_entities_regex(text)
+        company_entities = [e for e in entities if e.entity_type == "COMPANY"]
+        company_texts = [e.text for e in company_entities]
+        # Should have only one entry (the first-seen form)
+        assert company_texts.count("VentMarket, LLC") == 1
+        assert "VENTMARKET, LLC" not in company_texts
+
+    def test_allcaps_only_uses_first_seen(self):
+        """When ALL-CAPS appears first, that becomes the canonical form."""
+        text = (
+            "NOVATECH, LLC SHALL INDEMNIFY THE OTHER PARTY.\n"
+            "NovaTech, LLC agrees to the terms."
+        )
+        entities = detect_entities_regex(text)
+        company_entities = [e for e in entities if e.entity_type == "COMPANY"]
+        company_texts = [e.text for e in company_entities]
+        # Only one entry, and the first-seen form wins
+        ventmarket_entries = [t for t in company_texts if "novatech" in t.lower()]
+        assert len(ventmarket_entries) == 1
+
+    def test_counts_are_merged(self):
+        """Merged case variants should have combined counts."""
+        text = (
+            "VentMarket, LLC provides services. "
+            "VentMarket, LLC is based in Texas. "
+            "VENTMARKET, LLC\nBy: _______________"
+        )
+        entities = detect_entities_regex(text)
+        company_entities = [e for e in entities if e.entity_type == "COMPANY"]
+        vm = [e for e in company_entities if e.text == "VentMarket, LLC"]
+        assert len(vm) == 1
+        assert vm[0].count == 3  # 2 mixed-case + 1 all-caps
 
 
 # ===================================================================

@@ -159,6 +159,29 @@ CORPUS = [
         id="signature_block",
     ),
     pytest.param(
+        "allcaps_signature_block",
+        [
+            'This Agreement is by and between VentMarket, LLC, a Texas LLC '
+            '("VentMarket"), and Centinnial Logistics Services, LLC ("CLS").',
+            "WHEREAS, VentMarket is in the business of HVAC distribution.",
+            "WHEREAS, CLS provides warehouse labor services to VentMarket.",
+            "VentMarket shall pay CLS monthly fees.",
+            "IN WITNESS WHEREOF, the Parties have executed this Agreement.",
+            "VENTMARKET, LLC",
+            "By: _______________",
+            "Name: John Smith",
+            "Title: CEO",
+            "CENTINNIAL LOGISTICS SERVICES, LLC",
+            "By: _______________",
+            "Name: Jane Doe",
+            "Title: President",
+        ],
+        "VentMarket, LLC",
+        "Centinnial Logistics Services, LLC",
+        ["VentMarket", "Centinnial", "CLS", "VENTMARKET", "CENTINNIAL"],
+        id="allcaps_signature_block",
+    ),
+    pytest.param(
         "third_party_company",
         [
             'Lease Agreement between TrueNorth Properties, LLC '

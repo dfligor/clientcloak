@@ -157,6 +157,7 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
         r'^(?:The|This|That|These|Those|A|An)\s+', re.IGNORECASE,
     )
     company_counts: Counter = Counter()
+    company_canonical: dict[str, str] = {}  # lowered name -> first-seen case form
     for match in _COMPANY_SUFFIX_RE.finditer(text):
         # Ensure the suffix isn't mid-word (e.g. "County" matching "Co")
         end_pos = match.end()
@@ -172,7 +173,11 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
         # Skip matches that start with a common determiner
         if _determiner_re.match(name):
             continue
-        company_counts[name] += 1
+        # Case-insensitive dedup: merge "VENTMARKET, LLC" with "VentMarket, LLC"
+        name_lower = name.lower()
+        if name_lower not in company_canonical:
+            company_canonical[name_lower] = name
+        company_counts[company_canonical[name_lower]] += 1
     for idx, (name, count) in enumerate(company_counts.most_common(), 1):
         entities.append(DetectedEntity(
             text=name,
