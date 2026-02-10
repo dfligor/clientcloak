@@ -616,21 +616,23 @@ class TestRunGliner:
         assert "Acme Corp" in texts
 
     @patch("clientcloak.detector._get_gliner_model")
-    def test_applies_threshold(self, mock_get_model):
+    def test_uses_minimum_threshold_for_predict(self, mock_get_model):
+        """predict_entities receives min of per-label thresholds (currently 0.3)."""
         mock_model = MagicMock()
         mock_model.predict_entities.return_value = []
         mock_get_model.return_value = mock_model
 
+        from clientcloak.detector import _GLINER_THRESHOLDS
+        expected_min = min(_GLINER_THRESHOLDS.values())
+
         _run_gliner("Some text", threshold=0.7)
-        # Verify the threshold was passed through to predict_entities
         call_args = mock_model.predict_entities.call_args
         assert call_args is not None
-        # threshold is the third positional arg or keyword
+        # threshold is passed as keyword arg
         if call_args.kwargs.get("threshold") is not None:
-            assert call_args.kwargs["threshold"] == 0.7
+            assert call_args.kwargs["threshold"] == expected_min
         else:
-            # positional: (text, labels, threshold)
-            assert call_args[0][2] == 0.7
+            assert call_args[0][2] == expected_min
 
     @patch("clientcloak.detector._get_gliner_model")
     def test_deduplicates_cross_chunk(self, mock_get_model):
@@ -746,3 +748,211 @@ class TestDetectEntitiesWithGliner:
         date_entities = [e for e in result if e.entity_type == "DATE"]
         assert len(date_entities) == 1
         assert date_entities[0].text == "January 15, 2026"
+
+
+# ===================================================================
+# DATE regex detection
+# ===================================================================
+
+class TestDatePatterns:
+    """Tests for DATE regex detection in detect_entities_regex()."""
+
+    def test_matches_month_dd_comma_yyyy(self):
+        entities = detect_entities_regex("Effective as of June 30, 2025.")
+        dates = [e for e in entities if e.entity_type == "DATE"]
+        assert len(dates) >= 1
+        assert any("June 30, 2025" in d.text for d in dates)
+
+    def test_matches_month_dd_yyyy_no_comma(self):
+        entities = detect_entities_regex("Filed on November 6 2024 with the SEC.")
+        dates = [e for e in entities if e.entity_type == "DATE"]
+        assert len(dates) >= 1
+        assert any("November 6 2024" in d.text for d in dates)
+
+    def test_matches_mm_slash_dd_slash_yyyy(self):
+        entities = detect_entities_regex("Date: 01/15/2025")
+        dates = [e for e in entities if e.entity_type == "DATE"]
+        assert len(dates) >= 1
+        assert any("01/15/2025" in d.text for d in dates)
+
+    def test_matches_mm_dash_dd_dash_yyyy(self):
+        entities = detect_entities_regex("Signed 12-31-2024.")
+        dates = [e for e in entities if e.entity_type == "DATE"]
+        assert len(dates) >= 1
+        assert any("12-31-2024" in d.text for d in dates)
+
+    def test_matches_dd_month_yyyy(self):
+        entities = detect_entities_regex("On the 6 November 2024, the parties agreed.")
+        dates = [e for e in entities if e.entity_type == "DATE"]
+        assert len(dates) >= 1
+        assert any("6 November 2024" in d.text for d in dates)
+
+    def test_no_false_positive_on_year_alone(self):
+        entities = detect_entities_regex("In the year 2025, the company grew.")
+        dates = [e for e in entities if e.entity_type == "DATE"]
+        # A bare "2025" should NOT be detected as a date
+        assert not any(d.text.strip() == "2025" for d in dates)
+
+    def test_counts_multiple_dates(self):
+        text = "From June 30, 2025 to December 31, 2025."
+        entities = detect_entities_regex(text)
+        dates = [e for e in entities if e.entity_type == "DATE"]
+        assert len(dates) >= 2
+
+
+# ===================================================================
+# Expanded PERSON regex patterns
+# ===================================================================
+
+class TestExpandedPersonPatterns:
+    """Tests for expanded PERSON regex patterns."""
+
+    def test_signature_block_underscores(self):
+        text = "_______________\nJohn Smith"
+        entities = detect_entities_regex(text)
+        persons = [e for e in entities if e.entity_type == "PERSON"]
+        assert any("John Smith" in p.text for p in persons)
+
+    def test_signature_block_s_slash(self):
+        text = "/s/ Jane Doe"
+        entities = detect_entities_regex(text)
+        persons = [e for e in entities if e.entity_type == "PERSON"]
+        assert any("Jane Doe" in p.text for p in persons)
+
+    def test_between_pattern(self):
+        text = "This agreement is between Hugh Johnston, a resident of New York"
+        entities = detect_entities_regex(text)
+        persons = [e for e in entities if e.entity_type == "PERSON"]
+        assert any("Hugh Johnston" in p.text for p in persons)
+
+    def test_allcaps_name_after_label(self):
+        text = "Name: JOHN SMITH"
+        entities = detect_entities_regex(text)
+        persons = [e for e in entities if e.entity_type == "PERSON"]
+        assert any("JOHN SMITH" in p.text for p in persons)
+
+    def test_name_with_middle_initial(self):
+        text = "By: Hugh F. Johnston"
+        entities = detect_entities_regex(text)
+        persons = [e for e in entities if e.entity_type == "PERSON"]
+        assert any("Hugh F. Johnston" in p.text for p in persons)
+
+    def test_role_keyword_as_pattern(self):
+        """'and Charles H. Noski as Beneficiaries' should match."""
+        text = "as Trustee therein and Charles H. Noski as Beneficiaries' Representative"
+        entities = detect_entities_regex(text)
+        persons = [e for e in entities if e.entity_type == "PERSON"]
+        assert any("Charles H. Noski" in p.text for p in persons)
+
+    def test_false_positive_new_york_filtered(self):
+        """Place names like 'New York' should not be detected as persons."""
+        text = "between New York, a city in the state"
+        entities = detect_entities_regex(text)
+        persons = [e for e in entities if e.entity_type == "PERSON"]
+        assert not any("New York" in p.text for p in persons)
+
+    def test_false_positive_stock_market_filtered(self):
+        """'Stock Market' should not be detected as a person."""
+        text = "listed on the between Stock Market, the premier exchange"
+        entities = detect_entities_regex(text)
+        persons = [e for e in entities if e.entity_type == "PERSON"]
+        assert not any("Stock Market" in p.text for p in persons)
+
+
+# ===================================================================
+# GLiNER per-label threshold filtering
+# ===================================================================
+
+class TestGlinerThresholds:
+    """Tests for per-label GLiNER threshold filtering."""
+
+    @patch("clientcloak.detector._get_gliner_model")
+    def test_person_at_low_score_passes_with_lower_threshold(self, mock_get_model):
+        """Person at 0.35 should pass since person threshold is 0.3."""
+        mock_model = MagicMock()
+        mock_model.predict_entities.return_value = [
+            {"text": "John Smith", "label": "person", "score": 0.35},
+        ]
+        mock_get_model.return_value = mock_model
+        result = _run_gliner("John Smith works here.")
+        persons = [e for e in result if e.entity_type == "PERSON"]
+        assert len(persons) == 1
+
+    @patch("clientcloak.detector._get_gliner_model")
+    def test_person_below_threshold_filtered(self, mock_get_model):
+        """Person at 0.2 should be filtered since person threshold is 0.3."""
+        mock_model = MagicMock()
+        mock_model.predict_entities.return_value = [
+            {"text": "John Smith", "label": "person", "score": 0.2},
+        ]
+        mock_get_model.return_value = mock_model
+        result = _run_gliner("John Smith works here.")
+        persons = [e for e in result if e.entity_type == "PERSON"]
+        assert len(persons) == 0
+
+    @patch("clientcloak.detector._get_gliner_model")
+    def test_money_needs_higher_threshold(self, mock_get_model):
+        """Money at 0.4 should be filtered since money threshold is 0.5."""
+        mock_model = MagicMock()
+        mock_model.predict_entities.return_value = [
+            {"text": "$500", "label": "money", "score": 0.4},
+        ]
+        mock_get_model.return_value = mock_model
+        result = _run_gliner("Pay $500 now.")
+        amounts = [e for e in result if e.entity_type == "AMOUNT"]
+        assert len(amounts) == 0
+
+
+# ===================================================================
+# ADDRESS regex with full state names
+# ===================================================================
+
+class TestAddressFullStateNames:
+    """Tests for ADDRESS regex matching full state names."""
+
+    def test_matches_full_state_name(self):
+        text = "Located at 601 Travis Street, Houston, Texas 77002"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert len(addresses) >= 1
+        assert any("601 Travis Street" in a.text for a in addresses)
+
+    def test_still_matches_abbreviation(self):
+        """Existing 2-letter state abbreviations should still work."""
+        text = "Office at 123 Main Street, Springfield, IL 62704"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert len(addresses) >= 1
+
+    def test_matches_multi_word_state(self):
+        text = "Offices at 456 Oak Avenue, Anytown, North Carolina 27654"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert len(addresses) >= 1
+
+
+# ===================================================================
+# Context-aware bare amount detection (no $ prefix)
+# ===================================================================
+
+class TestBareAmountPattern:
+    """Tests for context-aware bare amount detection (no $ prefix)."""
+
+    def test_matches_exceed_shares(self):
+        text = "shall not exceed 11,200,000 shares"
+        entities = detect_entities_regex(text)
+        amounts = [e for e in entities if e.entity_type == "AMOUNT"]
+        assert any("11,200,000" in a.text for a in amounts)
+
+    def test_matches_up_to_dollars(self):
+        text = "up to 5,000,000 dollars in total"
+        entities = detect_entities_regex(text)
+        amounts = [e for e in entities if e.entity_type == "AMOUNT"]
+        assert any("5,000,000" in a.text for a in amounts)
+
+    def test_rejects_plain_number_no_context(self):
+        """A number without financial context keywords should not match."""
+        text = "Section 11,200,000 of the document"
+        entities = detect_entities_regex(text)
+        amounts = [e for e in entities if e.entity_type == "AMOUNT"]
+        assert not any("11,200,000" in a.text for a in amounts)

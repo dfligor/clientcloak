@@ -10,12 +10,25 @@ as an additional backend — both feed the same DetectedEntity model.
 from __future__ import annotations
 
 import logging
+import os
 import re
+import sys
 from collections import Counter
 
 from .models import DetectedEntity
 
 logger = logging.getLogger(__name__)
+
+# Full US state names for ADDRESS pattern matching.
+_US_STATES = (
+    "Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|"
+    "Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|"
+    "Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|"
+    "Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|"
+    "North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|"
+    "Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|"
+    "Virginia|Washington|West Virginia|Wisconsin|Wyoming|District of Columbia"
+)
 
 # Regex patterns for structured PII. Each key becomes the entity_type.
 ENTITY_PATTERNS: dict[str, str] = {
@@ -24,7 +37,11 @@ ENTITY_PATTERNS: dict[str, str] = {
     "SSN": r"\b\d{3}-\d{2}-\d{4}\b",
     "EIN": r"\b\d{2}-\d{7}\b",
     "AMOUNT": r"\$[\d,]+(?:\.\d{2})?\b",
-    "ADDRESS": r"\d+\s+[A-Za-z\s\.]+(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Way|Lane|Ln)\.?[,\s]+(?:(?:Suite|Ste|Apt|Unit)\s+\d+[,\s]+)?[A-Za-z\s]+,\s+[A-Z]{2}\s+\d{5}(?:-\d{4})?",
+    "ADDRESS": (
+        r"\d+\s+[A-Za-z\s\.]+(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Way|Lane|Ln)\.?"
+        r"[,\s]+(?:(?:Suite|Ste|Apt|Unit)\s+\d+[,\s]+)?"
+        r"[A-Za-z\s]+,\s+(?:" + _US_STATES + r"|[A-Z]{2})\s+\d{5}(?:-\d{4})?"
+    ),
     "URL": r"(?:https?://)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:/[^\s,)]*)?(?<![.,)])",
 }
 
@@ -33,13 +50,54 @@ _COMPILED_PATTERNS: dict[str, re.Pattern[str]] = {
     name: re.compile(pattern) for name, pattern in ENTITY_PATTERNS.items()
 }
 
+# Context-aware bare-number pattern for amounts without $ prefix.
+_BARE_AMOUNT_RE = re.compile(
+    r'(?:exceed|up to|maximum of|total of|aggregate of|limit of|not to exceed|'
+    r'in the amount of|principal amount of|sum of)\s+'
+    r'([\d,]{4,}(?:\.\d{2})?)\s*(?:shares?|units?|dollars?|pounds?)?',
+    re.IGNORECASE,
+)
+
 # Context-based person name patterns (require surrounding context to avoid false positives).
 # Each pattern should have a single capture group for the person's name.
+
+# Base name fragment: "FirstName [M.] LastName" — now accepts mixed/ALL-CAPS
+_NAME_FRAG = r'([A-Z][A-Za-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][A-Za-z]+)'
+
 _PERSON_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"(?:^|\n)\s*Name:\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\s*$", re.MULTILINE),
-    re.compile(r"(?:^|\n)\s*By:\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\s*$", re.MULTILINE),
-    re.compile(r"(?:^|\n)\s*Signature:\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\s*$", re.MULTILINE),
-    re.compile(r"(?:^|\n)\s*Attn:\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)", re.MULTILINE),
+    # Label-prefixed: "Name: John Smith", "By: John Smith", etc.
+    re.compile(rf'(?:^|\n)\s*(?:Name|By|Signature|Attn):\s+{_NAME_FRAG}\s*$', re.MULTILINE),
+    # Parenthetical defined-term: "Hugh F. Johnston (the "Representative")"
+    re.compile(rf'\b{_NAME_FRAG}\s*\((?:the\s+)?["\u201c]'),
+    # Signature block: underscores or /s/ followed by name
+    re.compile(rf'(?:_{{3,}}|/s/)\s*\n?\s*{_NAME_FRAG}'),
+    # Between/among pattern: "between John Smith," or "between John Smith and"
+    re.compile(rf'\b(?:between|among)\s+{_NAME_FRAG}\s*[,;]', re.IGNORECASE),
+    # Role-keyword context: "and John Smith as Representative"
+    re.compile(rf'\band\s+{_NAME_FRAG}\s+as\s+[A-Z]', re.IGNORECASE),
+]
+
+_PERSON_FALSE_POSITIVE_WORDS = frozenset({
+    "New", "York", "North", "South", "East", "West", "United", "States",
+    "Stock", "Market", "Trust", "Federal", "National", "District",
+    "San", "Los", "Las", "Fort", "Santa", "Saint", "Monte",
+    "Bank", "First", "Second", "Third", "Fourth", "Fifth",
+})
+
+# Context-based date patterns.
+_DATE_PATTERNS: list[re.Pattern[str]] = [
+    # Month DD, YYYY / Month DD YYYY
+    re.compile(
+        r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)'
+        r'\s+\d{1,2},?\s+\d{4}\b'
+    ),
+    # MM/DD/YYYY or MM-DD-YYYY
+    re.compile(r'\b\d{1,2}[/-]\d{1,2}[/-]\d{4}\b'),
+    # DD Month YYYY
+    re.compile(
+        r'\b\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)'
+        r'\s+\d{4}\b'
+    ),
 ]
 
 
@@ -56,15 +114,31 @@ _GLINER_LABEL_MAP: dict[str, str] = {
 }
 _GLINER_LABELS = list(_GLINER_LABEL_MAP.keys())
 
+_GLINER_THRESHOLDS: dict[str, float] = {
+    "person": 0.3,
+    "organization": 0.35,
+    "address": 0.5,
+    "date": 0.3,
+    "money": 0.5,
+}
+
 # Module-level singleton for the GLiNER model (lazy-loaded).
 _gliner_model = None
 _gliner_import_failed = False
 
 
-def _get_gliner_model(model_name: str = "urchade/gliner_medium-v2.1"):
+def _get_gliner_model(model_name: str = "urchade/gliner_multi_pii-v1"):
     """Return a cached GLiNER model instance, or None if unavailable.
 
-    Uses a circuit breaker so that repeated calls after a failed import
+    Tries three backends in order:
+
+    1. **Bundled ONNX model** — lightweight, no torch dependency.
+       Looks for an ONNX model directory at ``CLIENTCLOAK_ONNX_MODEL_DIR``
+       (env var) or ``sys._MEIPASS/models/gliner`` (PyInstaller bundle).
+    2. **Full GLiNER** — requires ``pip install gliner`` (torch-backed).
+    3. **None** — regex-only fallback.
+
+    Uses a circuit breaker so that repeated calls after a failed load
     return immediately without retrying.
     """
     global _gliner_model, _gliner_import_failed
@@ -74,6 +148,26 @@ def _get_gliner_model(model_name: str = "urchade/gliner_medium-v2.1"):
     if _gliner_model is not None:
         return _gliner_model
 
+    # --- Try 1: Bundled ONNX model ---
+    onnx_dir = os.environ.get("CLIENTCLOAK_ONNX_MODEL_DIR")
+    if not onnx_dir and getattr(sys, "frozen", False):
+        onnx_dir = os.path.join(sys._MEIPASS, "models", "gliner")  # type: ignore[attr-defined]
+    if onnx_dir and os.path.isdir(onnx_dir):
+        try:
+            from .onnx_ner import load_onnx_model  # noqa: PLC0415
+
+            logger.info("Loading ONNX NER model from: %s", onnx_dir)
+            _gliner_model = load_onnx_model(onnx_dir)
+            logger.info("ONNX NER model loaded successfully.")
+            return _gliner_model
+        except Exception:
+            logger.warning(
+                "ONNX NER model failed to load from %s, trying full GLiNER.",
+                onnx_dir,
+                exc_info=True,
+            )
+
+    # --- Try 2: Full GLiNER (dev / open-source installs) ---
     try:
         from gliner import GLiNER  # type: ignore[import-not-found]
 
@@ -186,10 +280,15 @@ def _run_gliner(text: str, threshold: float = 0.5) -> list[DetectedEntity]:
 
     for chunk_text, _char_offset in chunks:
         predictions = model.predict_entities(
-            chunk_text, _GLINER_LABELS, threshold=threshold, flat_ner=True,
+            chunk_text, _GLINER_LABELS,
+            threshold=min(_GLINER_THRESHOLDS.values()),
+            flat_ner=True,
         )
         for pred in predictions:
             gliner_label = pred["label"]
+            label_threshold = _GLINER_THRESHOLDS.get(gliner_label, threshold)
+            if pred["score"] < label_threshold:
+                continue
             entity_type = _GLINER_LABEL_MAP.get(gliner_label)
             if entity_type is None:
                 continue
@@ -319,7 +418,12 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
     person_counts: Counter = Counter()
     for pattern in _PERSON_PATTERNS:
         for match in pattern.finditer(text):
-            person_counts[match.group(1).strip()] += 1
+            name = match.group(1).strip()
+            # Filter false positives: skip if any word is a known place/legal term
+            name_words = name.split()
+            if any(w in _PERSON_FALSE_POSITIVE_WORDS for w in name_words):
+                continue
+            person_counts[name] += 1
     for idx, (name, count) in enumerate(person_counts.most_common(), 1):
         entities.append(DetectedEntity(
             text=name,
@@ -328,6 +432,36 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
             count=count,
             suggested_placeholder=generate_placeholder("PERSON", idx),
         ))
+
+    # Context-based date detection
+    date_counts: Counter = Counter()
+    for pattern in _DATE_PATTERNS:
+        for match in pattern.finditer(text):
+            date_counts[match.group(0).strip()] += 1
+    for idx, (date_text, count) in enumerate(date_counts.most_common(), 1):
+        entities.append(DetectedEntity(
+            text=date_text,
+            entity_type="DATE",
+            confidence=1.0,
+            count=count,
+            suggested_placeholder=generate_placeholder("DATE", idx),
+        ))
+
+    # Context-based bare amount detection (no $ prefix required)
+    existing_amounts = {e.text for e in entities if e.entity_type == "AMOUNT"}
+    amount_idx = len([e for e in entities if e.entity_type == "AMOUNT"])
+    for match in _BARE_AMOUNT_RE.finditer(text):
+        amount_text = match.group(1).strip()
+        if amount_text not in existing_amounts:
+            amount_idx += 1
+            entities.append(DetectedEntity(
+                text=amount_text,
+                entity_type="AMOUNT",
+                confidence=0.9,
+                count=len(re.findall(re.escape(amount_text), text)),
+                suggested_placeholder=generate_placeholder("AMOUNT", amount_idx),
+            ))
+            existing_amounts.add(amount_text)
 
     # Full-document company name detection by corporate suffix.
     # Catches third-party references like "Adventura Properties, LLC" that

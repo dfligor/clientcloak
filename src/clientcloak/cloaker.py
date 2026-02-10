@@ -124,7 +124,41 @@ def _make_short_placeholder(
     return f"[{label}-Short-{n}]"
 
 
-def _expand_content_replacements(cloak_replacements: dict[str, str]) -> dict[str, str]:
+_INITIALISM_STOP_WORDS = frozenset({"the", "of", "and", "a", "an", "in", "for", "to", "at", "by"})
+
+
+def _generate_initialisms(name: str) -> list[str]:
+    """Generate plausible initialisms/acronyms from a company name.
+
+    "Bank of New York Mellon" -> ["BNYM", "BNY"]
+    Only returns initialisms of 2+ characters.
+    """
+    # Strip corporate suffix first
+    core = _strip_corporate_suffix(name)
+    if not core:
+        return []
+    words = core.split()
+    significant = [w for w in words if w.lower() not in _INITIALISM_STOP_WORDS]
+    if len(significant) < 2:
+        return []
+
+    # Full initialism: first letter of each significant word
+    full = "".join(w[0].upper() for w in significant)
+    results = [full]
+
+    # Also try dropping the last word (common abbreviation pattern)
+    if len(significant) > 2:
+        shorter = "".join(w[0].upper() for w in significant[:-1])
+        if len(shorter) >= 2:
+            results.append(shorter)
+
+    return results
+
+
+def _expand_content_replacements(
+    cloak_replacements: dict[str, str],
+    document_text: str | None = None,
+) -> dict[str, str]:
     """Expand replacements with suffix-stripped variants.
 
     For each party name like "BigOrg Group PBC", iteratively strips corporate
@@ -135,6 +169,9 @@ def _expand_content_replacements(cloak_replacements: dict[str, str]) -> dict[str
     Each intermediate form is added as a replacement mapping to the same
     placeholder, so shortened references and defined terms in the document
     body, comments, and filenames are all caught.
+
+    If *document_text* is provided, also generates initialisms/acronyms from
+    company names and adds them as replacements when they appear in the text.
 
     Existing entries are never overwritten, and stripping stops when the
     name is fully consumed (single word with a suffix, e.g. "Partners").
@@ -149,6 +186,15 @@ def _expand_content_replacements(cloak_replacements: dict[str, str]) -> dict[str
             if stripped not in expanded:
                 expanded[stripped] = placeholder
             current = stripped
+
+    # Generate initialisms and add if they appear in the document
+    if document_text:
+        doc_upper = document_text.upper()
+        for original, placeholder in cloak_replacements.items():
+            for initialism in _generate_initialisms(original):
+                if initialism not in expanded and initialism in doc_upper:
+                    expanded[initialism] = placeholder
+
     return expanded
 
 
@@ -320,7 +366,10 @@ def cloak_document(
     # --- 6. Process comments ---
     # Expand replacements with suffix-stripped variants so shortened names
     # (e.g. "Making Reign" for "Making Reign Inc.") are also caught.
-    comment_replacements = _expand_content_replacements(cloak_replacements)
+    # Pass full document text for initialism detection.
+    text_fragments = extract_all_text(doc)
+    full_text = "\n".join(t for t, _src in text_fragments)
+    comment_replacements = _expand_content_replacements(cloak_replacements, document_text=full_text)
     comment_author_mapping = process_comments(
         input_path=output_path,
         output_path=output_path,
