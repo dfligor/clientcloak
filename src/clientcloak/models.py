@@ -127,6 +127,7 @@ class CloakConfig(BaseModel):
     comment_mode: CommentMode = CommentMode.SANITIZE
     strip_metadata: bool = True
     gliner_threshold: float = Field(default=0.5, ge=0, le=1)
+    use_gliner: bool = True
 
 
 class CloakResult(BaseModel):

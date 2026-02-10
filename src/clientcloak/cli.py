@@ -214,6 +214,7 @@ def _handle_cloak(args: argparse.Namespace) -> int:
         comment_mode=CommentMode(args.comment_mode),
         strip_metadata=not args.no_strip_metadata,
         gliner_threshold=args.threshold,
+        use_gliner=not args.no_gliner,
     )
 
     _print_header("Cloaking Document")
@@ -445,7 +446,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--threshold",
         type=float,
         default=0.5,
-        help="GLiNER confidence threshold, 0-1 (default: 0.5, for future use)",
+        help="GLiNER confidence threshold, 0-1 (default: 0.5)",
+    )
+    cloak_parser.add_argument(
+        "--no-gliner",
+        action="store_true",
+        default=False,
+        help="Disable GLiNER NER model (use regex-only entity detection)",
     )
     cloak_parser.add_argument(
         "--no-detect",

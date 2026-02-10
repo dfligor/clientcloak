@@ -9,10 +9,13 @@ as an additional backend — both feed the same DetectedEntity model.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import Counter
 
 from .models import DetectedEntity
+
+logger = logging.getLogger(__name__)
 
 # Regex patterns for structured PII. Each key becomes the entity_type.
 ENTITY_PATTERNS: dict[str, str] = {
@@ -38,6 +41,188 @@ _PERSON_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?:^|\n)\s*Signature:\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\s*$", re.MULTILINE),
     re.compile(r"(?:^|\n)\s*Attn:\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)", re.MULTILINE),
 ]
+
+
+# ---------------------------------------------------------------------------
+# GLiNER NER backend
+# ---------------------------------------------------------------------------
+
+_GLINER_LABEL_MAP: dict[str, str] = {
+    "person": "PERSON",
+    "organization": "COMPANY",
+    "address": "ADDRESS",
+    "date": "DATE",
+    "money": "AMOUNT",
+}
+_GLINER_LABELS = list(_GLINER_LABEL_MAP.keys())
+
+# Module-level singleton for the GLiNER model (lazy-loaded).
+_gliner_model = None
+_gliner_import_failed = False
+
+
+def _get_gliner_model(model_name: str = "urchade/gliner_medium-v2.1"):
+    """Return a cached GLiNER model instance, or None if unavailable.
+
+    Uses a circuit breaker so that repeated calls after a failed import
+    return immediately without retrying.
+    """
+    global _gliner_model, _gliner_import_failed
+
+    if _gliner_import_failed:
+        return None
+    if _gliner_model is not None:
+        return _gliner_model
+
+    try:
+        from gliner import GLiNER  # type: ignore[import-not-found]
+
+        logger.info("Loading GLiNER model: %s", model_name)
+        _gliner_model = GLiNER.from_pretrained(model_name)
+        logger.info("GLiNER model loaded successfully.")
+        return _gliner_model
+    except Exception:
+        _gliner_import_failed = True
+        logger.warning(
+            "GLiNER not available (not installed or model failed to load). "
+            "Falling back to regex-only detection.",
+            exc_info=True,
+        )
+        return None
+
+
+def _chunk_text(
+    text: str,
+    max_words: int = 350,
+    overlap_words: int = 50,
+) -> list[tuple[str, int]]:
+    """Split *text* into overlapping chunks for GLiNER inference.
+
+    Each chunk contains at most *max_words* words. Consecutive chunks
+    overlap by *overlap_words* words so that entities straddling a
+    boundary are captured in at least one chunk.
+
+    Returns a list of ``(chunk_text, char_offset)`` tuples.
+    """
+    if not text or not text.strip():
+        return []
+
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    chunks: list[tuple[str, int]] = []
+    current_sentences: list[str] = []
+    current_word_count = 0
+    current_char_offset = 0
+
+    for sentence in sentences:
+        sentence_words = len(sentence.split())
+
+        # If a single sentence exceeds max_words, split it by word count
+        if sentence_words > max_words:
+            # Flush current buffer first
+            if current_sentences:
+                chunk_text = " ".join(current_sentences)
+                chunks.append((chunk_text, current_char_offset))
+                current_char_offset += len(chunk_text) + 1
+                current_sentences = []
+                current_word_count = 0
+
+            words = sentence.split()
+            for i in range(0, len(words), max_words - overlap_words):
+                word_slice = words[i:i + max_words]
+                chunk_text = " ".join(word_slice)
+                chunks.append((chunk_text, current_char_offset))
+                current_char_offset += len(" ".join(words[i:i + max_words - overlap_words])) + 1
+            continue
+
+        if current_word_count + sentence_words > max_words and current_sentences:
+            chunk_text = " ".join(current_sentences)
+            chunks.append((chunk_text, current_char_offset))
+
+            # Build overlap from the tail of the current chunk
+            overlap_text_parts: list[str] = []
+            overlap_count = 0
+            for s in reversed(current_sentences):
+                s_words = len(s.split())
+                if overlap_count + s_words > overlap_words:
+                    break
+                overlap_text_parts.insert(0, s)
+                overlap_count += s_words
+
+            # Compute new char offset
+            if overlap_text_parts:
+                overlap_str = " ".join(overlap_text_parts)
+                current_char_offset = current_char_offset + len(chunk_text) - len(overlap_str)
+                current_sentences = overlap_text_parts
+                current_word_count = overlap_count
+            else:
+                current_char_offset += len(chunk_text) + 1
+                current_sentences = []
+                current_word_count = 0
+
+        current_sentences.append(sentence)
+        current_word_count += sentence_words
+
+    # Flush remaining sentences
+    if current_sentences:
+        chunk_text = " ".join(current_sentences)
+        chunks.append((chunk_text, current_char_offset))
+
+    return chunks
+
+
+def _run_gliner(text: str, threshold: float = 0.5) -> list[DetectedEntity]:
+    """Run GLiNER NER on *text* and return detected entities.
+
+    Returns an empty list when GLiNER is not installed or the model
+    fails to load.
+    """
+    model = _get_gliner_model()
+    if model is None:
+        return []
+
+    chunks = _chunk_text(text)
+    entities: list[DetectedEntity] = []
+    type_counters: dict[str, int] = {}
+
+    for chunk_text, _char_offset in chunks:
+        predictions = model.predict_entities(
+            chunk_text, _GLINER_LABELS, threshold=threshold, flat_ner=True,
+        )
+        for pred in predictions:
+            gliner_label = pred["label"]
+            entity_type = _GLINER_LABEL_MAP.get(gliner_label)
+            if entity_type is None:
+                continue
+            type_counters[entity_type] = type_counters.get(entity_type, 0) + 1
+            entities.append(DetectedEntity(
+                text=pred["text"],
+                entity_type=entity_type,
+                confidence=pred["score"],
+                count=1,
+                suggested_placeholder=generate_placeholder(
+                    entity_type, type_counters[entity_type],
+                ),
+            ))
+
+    entities = deduplicate_entities(entities)
+    return entities
+
+
+def _reassign_placeholders(entities: list[DetectedEntity]) -> list[DetectedEntity]:
+    """Re-number placeholders sequentially after merge/dedup.
+
+    Groups entities by type and assigns ``[Type-1]``, ``[Type-2]``, etc.
+    within each group, preserving the existing list order.
+    """
+    type_counters: dict[str, int] = {}
+    result: list[DetectedEntity] = []
+    for entity in entities:
+        type_counters[entity.entity_type] = type_counters.get(entity.entity_type, 0) + 1
+        idx = type_counters[entity.entity_type]
+        result.append(entity.model_copy(update={
+            "suggested_placeholder": generate_placeholder(entity.entity_type, idx),
+        }))
+    return result
 
 
 def generate_placeholder(entity_type: str, index: int) -> str:
@@ -194,6 +379,7 @@ def detect_entities(
     text: str,
     party_names: list[str] | None = None,
     gliner_threshold: float = 0.5,
+    use_gliner: bool = True,
 ) -> list[DetectedEntity]:
     """
     Detect entities in text using all available backends.
@@ -203,17 +389,20 @@ def detect_entities(
 
     Steps:
         1. Always run regex-based detection.
-        2. Try to import and run GLiNER (Phase 2 — graceful skip if not
-           installed).
+        2. Run GLiNER NER if enabled and available (graceful fallback to
+           regex-only if not installed or if inference fails).
         3. Merge and deduplicate results from all backends.
         4. Filter out entities whose text matches a known party name.
-        5. Return sorted by count descending.
+        5. Re-number placeholders sequentially.
+        6. Return sorted by count descending.
 
     Args:
         text: The full document text to scan.
         party_names: Optional list of party names to exclude from results
             (these are already handled by party config).
         gliner_threshold: Confidence threshold for GLiNER results.
+        use_gliner: If True, attempt GLiNER NER detection in addition to
+            regex. Set to False for regex-only mode.
 
     Returns:
         List of DetectedEntity instances sorted by count (descending).
@@ -221,14 +410,13 @@ def detect_entities(
     # 1. Regex detection (always runs)
     entities = detect_entities_regex(text)
 
-    # 2. GLiNER detection (Phase 2 — skip if not installed)
-    try:
-        from gliner import GLiNER  # type: ignore[import-not-found]  # noqa: F401
-        # Phase 2: GLiNER inference will go here.
-        # gliner_entities = _run_gliner(text, gliner_threshold)
-        # entities.extend(gliner_entities)
-    except ImportError:
-        pass
+    # 2. GLiNER detection (skip if disabled or not installed)
+    if use_gliner:
+        try:
+            gliner_entities = _run_gliner(text, gliner_threshold)
+            entities.extend(gliner_entities)
+        except Exception:
+            logger.warning("GLiNER detection failed, falling back to regex-only", exc_info=True)
 
     # 3. Deduplicate
     entities = deduplicate_entities(entities)
@@ -245,6 +433,9 @@ def detect_entities(
 
     # 5. Sort by count descending, then by text for stability
     entities.sort(key=lambda e: (-e.count, e.text))
+
+    # 6. Re-number placeholders sequentially after merge/filter
+    entities = _reassign_placeholders(entities)
 
     return entities
 

@@ -7,6 +7,7 @@ and party name detection from legal preambles.
 """
 
 import pytest
+from unittest.mock import patch, MagicMock
 
 from clientcloak.detector import (
     detect_entities,
@@ -14,6 +15,10 @@ from clientcloak.detector import (
     detect_party_names,
     deduplicate_entities,
     generate_placeholder,
+    _chunk_text,
+    _run_gliner,
+    _reassign_placeholders,
+    _GLINER_LABEL_MAP,
 )
 from clientcloak.models import DetectedEntity
 
@@ -526,3 +531,218 @@ class TestDetectPartyNames:
         )
         assert "Acme Corp." in names
         assert "Beta LLC" in names
+
+
+# ===================================================================
+# GLiNER integration: text chunking
+# ===================================================================
+
+class TestChunkText:
+
+    def test_short_text_single_chunk(self):
+        text = "This is a short sentence with only a few words."
+        chunks = _chunk_text(text)
+        assert len(chunks) == 1
+        assert chunks[0][0] == text
+        assert chunks[0][1] == 0  # char offset
+
+    def test_long_text_splits(self):
+        # 400 words, well above the 350-word default
+        words = ["word"] * 400
+        text = " ".join(words)
+        chunks = _chunk_text(text)
+        assert len(chunks) >= 2
+
+    def test_sentence_boundaries_respected(self):
+        # Build text with clear sentence boundaries and enough words
+        sentences = ["This is sentence number %d." % i for i in range(80)]
+        text = " ".join(sentences)
+        chunks = _chunk_text(text)
+        # Each chunk (except possibly the last) should end at a sentence boundary
+        for chunk_text, _ in chunks[:-1]:
+            assert chunk_text.rstrip().endswith(".")
+
+    def test_overlap_between_chunks(self):
+        words = ["word%d" % i for i in range(500)]
+        text = " ".join(words)
+        chunks = _chunk_text(text, max_words=100, overlap_words=20)
+        if len(chunks) >= 2:
+            first_words = set(chunks[0][0].split())
+            second_words = set(chunks[1][0].split())
+            overlap = first_words & second_words
+            assert len(overlap) > 0
+
+    def test_empty_text(self):
+        assert _chunk_text("") == []
+
+
+# ===================================================================
+# GLiNER label mapping
+# ===================================================================
+
+class TestGlinerLabelMapping:
+
+    def test_all_labels_mapped(self):
+        expected_labels = {"person", "organization", "address", "date", "money"}
+        assert set(_GLINER_LABEL_MAP.keys()) == expected_labels
+
+    def test_mapped_types_are_valid(self):
+        expected_types = {"PERSON", "COMPANY", "ADDRESS", "DATE", "AMOUNT"}
+        assert set(_GLINER_LABEL_MAP.values()) == expected_types
+
+
+# ===================================================================
+# GLiNER inference (mocked model)
+# ===================================================================
+
+class TestRunGliner:
+
+    @patch("clientcloak.detector._get_gliner_model")
+    def test_returns_entities(self, mock_get_model):
+        mock_model = MagicMock()
+        mock_model.predict_entities.return_value = [
+            {"text": "John Smith", "label": "person", "score": 0.95},
+            {"text": "Acme Corp", "label": "organization", "score": 0.88},
+        ]
+        mock_get_model.return_value = mock_model
+
+        result = _run_gliner("John Smith works at Acme Corp.")
+        assert len(result) == 2
+        types = {e.entity_type for e in result}
+        assert "PERSON" in types
+        assert "COMPANY" in types
+        texts = {e.text for e in result}
+        assert "John Smith" in texts
+        assert "Acme Corp" in texts
+
+    @patch("clientcloak.detector._get_gliner_model")
+    def test_applies_threshold(self, mock_get_model):
+        mock_model = MagicMock()
+        mock_model.predict_entities.return_value = []
+        mock_get_model.return_value = mock_model
+
+        _run_gliner("Some text", threshold=0.7)
+        # Verify the threshold was passed through to predict_entities
+        call_args = mock_model.predict_entities.call_args
+        assert call_args is not None
+        # threshold is the third positional arg or keyword
+        if call_args.kwargs.get("threshold") is not None:
+            assert call_args.kwargs["threshold"] == 0.7
+        else:
+            # positional: (text, labels, threshold)
+            assert call_args[0][2] == 0.7
+
+    @patch("clientcloak.detector._get_gliner_model")
+    def test_deduplicates_cross_chunk(self, mock_get_model):
+        mock_model = MagicMock()
+        # Same entity returned from overlapping chunks
+        mock_model.predict_entities.return_value = [
+            {"text": "John Smith", "label": "person", "score": 0.95},
+        ]
+        mock_get_model.return_value = mock_model
+
+        # Use a long text that forces multiple chunks
+        words = ["word"] * 400
+        words[10] = "John"
+        words[11] = "Smith"
+        text = " ".join(words)
+        result = _run_gliner(text)
+        # Even if predict_entities is called multiple times (once per chunk),
+        # "John Smith" should appear only once in the results
+        john_entities = [e for e in result if e.text == "John Smith"]
+        assert len(john_entities) == 1
+
+    @patch("clientcloak.detector._get_gliner_model")
+    def test_returns_empty_when_unavailable(self, mock_get_model):
+        mock_get_model.return_value = None
+        result = _run_gliner("John Smith works at Acme Corp.")
+        assert result == []
+
+
+# ===================================================================
+# Placeholder reassignment
+# ===================================================================
+
+class TestReassignPlaceholders:
+
+    def test_sequential_numbering(self):
+        entities = [
+            DetectedEntity(text="john@a.com", entity_type="EMAIL", confidence=1.0, count=1, suggested_placeholder="[Email-99]"),
+            DetectedEntity(text="jane@b.com", entity_type="EMAIL", confidence=1.0, count=1, suggested_placeholder="[Email-100]"),
+        ]
+        result = _reassign_placeholders(entities)
+        placeholders = [e.suggested_placeholder for e in result]
+        assert "[Email-1]" in placeholders
+        assert "[Email-2]" in placeholders
+
+    def test_independent_per_type(self):
+        entities = [
+            DetectedEntity(text="john@a.com", entity_type="EMAIL", confidence=1.0, count=1, suggested_placeholder="[Email-5]"),
+            DetectedEntity(text="555-123-4567", entity_type="PHONE", confidence=1.0, count=1, suggested_placeholder="[Phone-5]"),
+            DetectedEntity(text="jane@b.com", entity_type="EMAIL", confidence=1.0, count=1, suggested_placeholder="[Email-6]"),
+        ]
+        result = _reassign_placeholders(entities)
+        emails = [e for e in result if e.entity_type == "EMAIL"]
+        phones = [e for e in result if e.entity_type == "PHONE"]
+        email_placeholders = sorted([e.suggested_placeholder for e in emails])
+        assert email_placeholders == ["[Email-1]", "[Email-2]"]
+        assert phones[0].suggested_placeholder == "[Phone-1]"
+
+
+# ===================================================================
+# detect_entities() with GLiNER integration
+# ===================================================================
+
+class TestDetectEntitiesWithGliner:
+
+    @patch("clientcloak.detector._run_gliner")
+    def test_gliner_merged_with_regex(self, mock_run_gliner):
+        mock_run_gliner.return_value = [
+            DetectedEntity(
+                text="John Smith",
+                entity_type="PERSON",
+                confidence=0.92,
+                count=1,
+                suggested_placeholder="[Person-1]",
+            ),
+        ]
+        text = "John Smith can be reached at john@example.com."
+        result = detect_entities(text, use_gliner=True)
+        types = {e.entity_type for e in result}
+        assert "EMAIL" in types   # from regex
+        assert "PERSON" in types  # from GLiNER
+
+    @patch("clientcloak.detector._run_gliner")
+    def test_use_gliner_false_skips_it(self, mock_run_gliner):
+        text = "Contact john@example.com for details."
+        result = detect_entities(text, use_gliner=False)
+        mock_run_gliner.assert_not_called()
+        types = {e.entity_type for e in result}
+        assert "EMAIL" in types
+
+    @patch("clientcloak.detector._run_gliner")
+    def test_gliner_failure_falls_back_to_regex(self, mock_run_gliner):
+        mock_run_gliner.side_effect = RuntimeError("Model failed")
+        text = "Send $500 to john@example.com."
+        result = detect_entities(text, use_gliner=True)
+        # Regex results should still be returned
+        types = {e.entity_type for e in result}
+        assert "EMAIL" in types
+        assert "AMOUNT" in types
+
+    @patch("clientcloak.detector._run_gliner")
+    def test_date_entity_type(self, mock_run_gliner):
+        mock_run_gliner.return_value = [
+            DetectedEntity(
+                text="January 15, 2026",
+                entity_type="DATE",
+                confidence=0.89,
+                count=1,
+                suggested_placeholder="[Date-1]",
+            ),
+        ]
+        text = "The contract was signed on January 15, 2026."
+        result = detect_entities(text, use_gliner=True)
+        date_entities = [e for e in result if e.entity_type == "DATE"]
+        assert len(date_entities) == 1
+        assert date_entities[0].text == "January 15, 2026"

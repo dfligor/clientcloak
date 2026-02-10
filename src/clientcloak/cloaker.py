@@ -392,4 +392,5 @@ def preview_entities(
         text=full_text,
         party_names=party_names,
         gliner_threshold=config.gliner_threshold,
+        use_gliner=config.use_gliner,
     )
