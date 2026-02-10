@@ -524,3 +524,66 @@ class TestReplaceTextInXml:
             xml = zf.read("word/document.xml").decode("utf-8")
         # Bracketed labels should be preserved verbatim
         assert "[Vendor]" in xml
+
+    def test_ampersand_in_search_key(self, tmp_path):
+        """Company names with '&' (e.g. 'Johnson & Johnson') must match in XML."""
+        path = make_docx_with_tracked_insertion(
+            tmp_path / "amp_key.docx",
+            "Body text.",
+            "Johnson & Johnson filed the motion.",
+        )
+        count = replace_text_in_xml(
+            path,
+            {"Johnson & Johnson": "[Company]"},
+            match_case=False,
+        )
+        assert count >= 1
+
+        import zipfile, re
+        with zipfile.ZipFile(path, "r") as zf:
+            xml = zf.read("word/document.xml").decode("utf-8")
+        wt_texts = re.findall(r"<w:t[^>]*>([^<]*)</w:t>", xml)
+        combined = " ".join(wt_texts)
+        assert "[Company]" in combined
+        assert "Johnson" not in combined
+
+    def test_ampersand_in_replacement_value(self, tmp_path):
+        """Replacement values with '&' must produce valid XML (&amp;)."""
+        path = make_docx_with_tracked_insertion(
+            tmp_path / "amp_val.docx",
+            "Body text.",
+            "[Vendor] supplied the parts.",
+        )
+        count = replace_text_in_xml(
+            path,
+            {"[Vendor]": "Smith & Wesson"},
+            match_case=False,
+        )
+        assert count >= 1
+
+        import zipfile, re
+        with zipfile.ZipFile(path, "r") as zf:
+            xml = zf.read("word/document.xml").decode("utf-8")
+        # Must be escaped in raw XML
+        assert "Smith &amp; Wesson" in xml
+        # Raw '&' without 'amp;' after it would be malformed
+        assert "Smith & Wesson" not in xml
+
+    def test_xml_entities_round_trip(self, tmp_path):
+        """Text with XML-special chars that doesn't match any key is preserved."""
+        path = make_docx_with_tracked_insertion(
+            tmp_path / "entities.docx",
+            "Body text.",
+            "x < y & a > b",
+        )
+        count = replace_text_in_xml(
+            path,
+            {"[Company]": "Acme"},
+            match_case=False,
+        )
+        assert count == 0
+
+        import zipfile
+        with zipfile.ZipFile(path, "r") as zf:
+            xml = zf.read("word/document.xml").decode("utf-8")
+        assert "x &lt; y &amp; a &gt; b" in xml

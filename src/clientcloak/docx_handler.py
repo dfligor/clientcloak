@@ -22,6 +22,7 @@ from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
+from xml.sax.saxutils import escape as _xml_escape, unescape as _xml_unescape
 
 from docx import Document
 from docx.opc.exceptions import PackageNotFoundError
@@ -724,6 +725,7 @@ def replace_text_in_xml(
                     tag_open = m.group(1)
                     text_content = m.group(2)
                     tag_close = m.group(3)
+                    plain_text = _xml_unescape(text_content)
 
                     def _sub(sm: re.Match) -> str:
                         nonlocal total
@@ -734,11 +736,11 @@ def replace_text_in_xml(
                             return _transfer_case(matched, template)
                         return template
 
-                    new_text = pattern.sub(_sub, text_content)
-                    return tag_open + new_text + tag_close
+                    new_text = pattern.sub(_sub, plain_text)
+                    return tag_open + _xml_escape(new_text) + tag_close
 
                 xml_str = re.sub(
-                    r"(<w:t[^>]*>)(.*?)(</w:t>)",
+                    r"(<w:t(?:\s[^>]*)?>)(.*?)(</w:t>)",
                     _replace_in_wt,
                     xml_str,
                     flags=re.DOTALL,

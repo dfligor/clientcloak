@@ -32,7 +32,7 @@ import zipfile
 from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree as ET
-from xml.sax.saxutils import escape as xml_escape
+from xml.sax.saxutils import escape as xml_escape, unescape as xml_unescape
 
 from defusedxml.ElementTree import fromstring as _safe_fromstring
 
@@ -453,19 +453,20 @@ def _anonymize_comments(
             "|".join(re.escape(k) for k in sorted_keys),
             flags=re.IGNORECASE,
         )
-        lookup = {k.lower(): xml_escape(v) for k, v in content_replacements.items()}
+        lookup = {k.lower(): v for k, v in content_replacements.items()}
 
         def _replace_in_wt(wt_match: re.Match) -> str:
             tag_open = wt_match.group(1)
             text_content = wt_match.group(2)
             tag_close = wt_match.group(3)
+            plain_text = xml_unescape(text_content)
             new_text = content_pattern.sub(
-                lambda m: lookup[m.group().lower()], text_content,
+                lambda m: lookup[m.group().lower()], plain_text,
             )
-            return tag_open + new_text + tag_close
+            return tag_open + xml_escape(new_text) + tag_close
 
         xml_str = re.sub(
-            r"(<w:t[^>]*>)(.*?)(</w:t>)",
+            r"(<w:t(?:\s[^>]*)?>)(.*?)(</w:t>)",
             _replace_in_wt,
             xml_str,
             flags=re.DOTALL,

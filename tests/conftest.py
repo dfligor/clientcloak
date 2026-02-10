@@ -10,6 +10,7 @@ import zipfile
 from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree as ET
+from xml.sax.saxutils import escape as _xml_escape
 
 import pytest
 from docx import Document
@@ -125,7 +126,7 @@ def make_docx_with_tracked_insertion(
                 ins_xml = (
                     f'<w:p><w:ins w:id="99" w:author="Test" '
                     f'w:date="2026-01-01T00:00:00Z">'
-                    f'<w:r><w:t>{inserted_text}</w:t></w:r>'
+                    f'<w:r><w:t>{_xml_escape(inserted_text)}</w:t></w:r>'
                     f'</w:ins></w:p>'
                 )
                 xml_str = xml_str.replace("</w:body>", ins_xml + "</w:body>")
