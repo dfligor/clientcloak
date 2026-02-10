@@ -128,15 +128,16 @@ async def upload_document(file: UploadFile = File(...)):
         non_empty = [text for text, _source in text_fragments if text.strip()]
         preamble_text = "\n".join(non_empty[:5])
 
+        # Detect party names from preamble (must run BEFORE entity detection
+        # so we can filter out party name variants like ALL-CAPS forms)
+        preamble_for_parties = "\n".join(non_empty[:10])  # slightly more context for party detection
+        suggested_parties = await asyncio.to_thread(detect_party_names, preamble_for_parties)
+
         # Filter entities using detected party names to avoid duplicates
         # (e.g. "VENTMARKET, LLC" in signature blocks vs "VentMarket, LLC")
         party_names_for_filter = [p["name"] for p in suggested_parties]
         entities = await asyncio.to_thread(detect_entities, full_text, party_names=party_names_for_filter)
         detected_entities = [e.model_dump() for e in entities]
-
-        # Detect party names from preamble
-        preamble_for_parties = "\n".join(non_empty[:10])  # slightly more context for party detection
-        suggested_parties = await asyncio.to_thread(detect_party_names, preamble_for_parties)
     except Exception as exc:
         logger.warning("Text extraction/detection failed", session_id=session_id, error=str(exc))
 

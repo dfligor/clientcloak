@@ -104,7 +104,7 @@ class MappingFile(BaseModel):
     - Inverted at cloak time for lookup (original -> placeholder)
     """
     version: str = "1.0"
-    created: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created: datetime = Field(default_factory=lambda: datetime.now().astimezone())
     original_file: str = ""
     party_labels: dict[str, str] = {}  # e.g., {"party_a": "Customer", "party_b": "Vendor"}
     mappings: dict[str, str] = {}  # placeholder -> original value
