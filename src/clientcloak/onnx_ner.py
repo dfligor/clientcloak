@@ -289,17 +289,28 @@ def load_onnx_model(model_dir: str | Path) -> OnnxNerModel:
 
     model_dir = Path(model_dir)
 
-    # Load ONNX session — prefer quantized model.
-    onnx_path = model_dir / "model_quantized.onnx"
+    # Load ONNX session — prefer full-precision model for accuracy.
+    # INT8 quantization degrades NER scores (e.g. person names drop below
+    # detection threshold), so we only fall back to quantized when the
+    # full-precision model is unavailable.
+    onnx_path = model_dir / "model.onnx"
     if not onnx_path.exists():
-        onnx_path = model_dir / "model.onnx"
+        onnx_path = model_dir / "model_quantized.onnx"
     if not onnx_path.exists():
         raise FileNotFoundError(f"No ONNX model found in {model_dir}")
 
     logger.info("Loading ONNX NER model from %s", onnx_path)
     sess_options = ort.SessionOptions()
     sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    session = ort.InferenceSession(str(onnx_path), sess_options)
+
+    # Use CoreML (Metal/ANE) on macOS when available, falling back to CPU.
+    providers = ort.get_available_providers()
+    preferred = []
+    if "CoreMLExecutionProvider" in providers:
+        preferred.append("CoreMLExecutionProvider")
+    preferred.append("CPUExecutionProvider")
+
+    session = ort.InferenceSession(str(onnx_path), sess_options, providers=preferred)
 
     # Load tokenizer.
     tok_path = model_dir / "tokenizer.json"
