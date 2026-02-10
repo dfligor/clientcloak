@@ -47,10 +47,11 @@ def _build_mappings_and_replacements(
     This is the single source of truth for replacement-building logic,
     called by both :func:`build_cloak_replacements` and :func:`cloak_document`.
     """
-    mappings: dict[str, str] = {
-        f"[{config.party_a_label}]": config.party_a_name,
-        f"[{config.party_b_label}]": config.party_b_name,
-    }
+    mappings: dict[str, str] = {}
+    if config.party_a_name:
+        mappings[f"[{config.party_a_label}]"] = config.party_a_name
+    if config.party_b_name:
+        mappings[f"[{config.party_b_label}]"] = config.party_b_name
     for alias in config.party_a_aliases:
         mappings[f"[{alias.label}]"] = alias.name
     for alias in config.party_b_aliases:
@@ -382,7 +383,7 @@ def preview_entities(
     full_text = "\n".join(text for text, _source in text_fragments)
 
     # Collect all party names (primary + aliases) for filtering
-    party_names: list[str] = [config.party_a_name, config.party_b_name]
+    party_names: list[str] = [n for n in (config.party_a_name, config.party_b_name) if n]
     for alias in config.party_a_aliases:
         party_names.append(alias.name)
     for alias in config.party_b_aliases:

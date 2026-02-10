@@ -482,6 +482,11 @@ def _replace_preserving_format(
         repl_len = len(new_text)
 
         # Identify which runs are touched.
+        # Guard against stale char_map after earlier in-place splices
+        # shifted run lengths (right-to-left processing mitigates this,
+        # but pandoc-converted docs can still trigger edge cases).
+        if start >= len(char_map) or (end - 1) >= len(char_map):
+            raise _FallbackNeeded
         first_run_idx, first_offset = char_map[start]
         last_run_idx, _ = char_map[end - 1]
 
