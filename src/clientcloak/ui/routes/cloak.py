@@ -136,7 +136,7 @@ async def upload_document(file: UploadFile = File(...)):
         # Filter entities using detected party names to avoid duplicates
         # (e.g. "VENTMARKET, LLC" in signature blocks vs "VentMarket, LLC")
         party_names_for_filter = [p["name"] for p in suggested_parties]
-        entities = await asyncio.to_thread(detect_entities, full_text, party_names=party_names_for_filter)
+        entities = await asyncio.to_thread(detect_entities, full_text, party_names=party_names_for_filter, max_chars=200_000)
         detected_entities = [e.model_dump() for e in entities]
     except Exception as exc:
         logger.warning("Text extraction/detection failed", session_id=session_id, error=str(exc))

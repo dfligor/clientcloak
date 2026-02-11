@@ -169,18 +169,101 @@ _GLINER_LABEL_MAP: dict[str, str] = {
     "person": "PERSON",
     "organization": "COMPANY",
     "address": "ADDRESS",
-    "date": "DATE",
-    "money": "AMOUNT",
 }
 _GLINER_LABELS = list(_GLINER_LABEL_MAP.keys())
 
 _GLINER_THRESHOLDS: dict[str, float] = {
-    "person": 0.3,
-    "organization": 0.28,
-    "address": 0.35,
-    "date": 0.3,
-    "money": 0.5,
+    "person": 0.6,
+    "organization": 0.6,
+    "address": 0.5,
 }
+
+# --- GLiNER post-processing filters ---
+
+# Pronouns, common nouns, and legal terms that GLiNER misclassifies as PERSON.
+_PERSON_BLOCKLIST = frozenset({
+    "you", "i", "he", "she", "we", "they", "me", "him", "her", "us", "them",
+    "it", "my", "your", "his", "our", "their",
+    "attorney", "arbitrator", "party", "parties", "counsel", "judge",
+    "plaintiff", "defendant", "claimant", "respondent", "witness",
+    "executor", "trustee", "beneficiary", "agent", "representative",
+    "receiving party", "disclosing party", "prevailing party",
+    "indemnifying party", "indemnified party", "injured party",
+    "the parties", "the company", "the contractor", "the consultant",
+    "the employee", "the employer", "the client", "the vendor",
+    "single arbitrator", "independent contractor",
+})
+
+# Leading determiners/prepositions to strip from COMPANY entities.
+_COMPANY_DETERMINER_RE = re.compile(
+    r'^(?:the|a|an|any|any\s+other|each|no|such)\s+', re.IGNORECASE,
+)
+
+# Legal statute/act suffixes that indicate a law, not a company.
+_LEGAL_STATUTE_SUFFIXES = frozenset({
+    "act", "code", "rule", "statute", "law", "regulation",
+    "amendment", "order", "ordinance", "convention",
+})
+
+# Known legal abbreviations often misclassified as COMPANY.
+_LEGAL_ABBREVIATIONS = frozenset({
+    "DTSA", "CFAA", "FCPA", "SOX", "HIPAA", "FERPA", "COPPA",
+    "GDPR", "CCPA", "TCPA", "CAN-SPAM", "RICO", "ERISA", "FLSA",
+    "FMLA", "ADA", "OSHA", "EPA", "SEC", "FTC", "DOJ", "FBI",
+    "IRS", "EEOC", "NLRB", "FINRA", "CFTC", "OCC", "FDIC",
+})
+
+# Common corporate suffixes (lowercase) — all-caps short entities NOT in
+# this set are likely legal abbreviations, not companies.
+_CORPORATE_SUFFIX_WORDS = frozenset({
+    "inc", "llc", "llp", "lp", "ltd", "corp", "co", "plc", "pbc",
+    "gmbh", "ag", "sa", "bv", "nv", "se", "ab", "oy", "oyj",
+    "sas", "srl", "spa", "pllc", "lllp", "gp", "pc", "na", "fsb",
+})
+
+
+def _filter_gliner_entity(text: str, entity_type: str) -> str | None:
+    """Apply post-processing filters to a single GLiNER entity.
+
+    Returns the (possibly cleaned) entity text, or None if the entity
+    should be rejected entirely.
+    """
+    # Reject entities containing newlines (cross-line chunk artifacts).
+    if "\n" in text:
+        return None
+
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    if entity_type == "PERSON":
+        # Reject pronouns, common nouns, and legal terms.
+        if stripped.lower() in _PERSON_BLOCKLIST:
+            return None
+
+    elif entity_type == "COMPANY":
+        # Strip leading determiners/prepositions.
+        cleaned = _COMPANY_DETERMINER_RE.sub("", stripped).strip()
+        if not cleaned:
+            return None
+        stripped = cleaned
+
+        # Reject legal statutes: entities ending with Act, Code, etc.
+        last_word = stripped.rsplit(None, 1)[-1].rstrip(".,;:").lower()
+        if last_word in _LEGAL_STATUTE_SUFFIXES:
+            return None
+
+        # Reject known legal abbreviations.
+        if stripped.rstrip(".,;:") in _LEGAL_ABBREVIATIONS:
+            return None
+
+        # Reject all-caps 2-5 letter entities that aren't corporate suffixes.
+        bare = stripped.rstrip(".,;:")
+        if bare.isupper() and 2 <= len(bare) <= 5 and bare.lower() not in _CORPORATE_SUFFIX_WORDS:
+            return None
+
+    return stripped
+
 
 # Module-level singleton for the GLiNER model (lazy-loaded).
 _gliner_model = None
@@ -352,9 +435,13 @@ def _run_gliner(text: str, threshold: float = 0.5) -> list[DetectedEntity]:
             entity_type = _GLINER_LABEL_MAP.get(gliner_label)
             if entity_type is None:
                 continue
+            # Post-processing filter: reject junk, strip determiners, etc.
+            filtered_text = _filter_gliner_entity(pred["text"], entity_type)
+            if filtered_text is None:
+                continue
             type_counters[entity_type] = type_counters.get(entity_type, 0) + 1
             entities.append(DetectedEntity(
-                text=pred["text"],
+                text=filtered_text,
                 entity_type=entity_type,
                 confidence=pred["score"],
                 count=1,
@@ -610,6 +697,9 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
         # Skip matches that start with a common determiner
         if _determiner_re.match(name):
             continue
+        # Skip matches starting with "Dear " (letter salutation)
+        if name.startswith("Dear "):
+            continue
         # Case-insensitive dedup: merge "VENTMARKET, LLC" with "VentMarket, LLC"
         name_lower = name.lower()
         if name_lower not in company_canonical:
@@ -684,6 +774,20 @@ def detect_entities(
 
     # 3. Deduplicate
     entities = deduplicate_entities(entities)
+
+    # 3b. Cross-type duplicate suppression: if the same text appears as
+    # multiple entity types (e.g., an email detected as both EMAIL by regex
+    # and PERSON by GLiNER), keep only the highest-confidence version.
+    best_by_text: dict[str, DetectedEntity] = {}
+    for e in entities:
+        text_lower = e.text.lower()
+        if text_lower not in best_by_text or e.confidence > best_by_text[text_lower].confidence:
+            best_by_text[text_lower] = e
+    # Drop entities whose text has a higher-confidence version of a different type
+    entities = [
+        e for e in entities
+        if best_by_text[e.text.lower()].entity_type == e.entity_type
+    ]
 
     # 4. Filter out known party names.
     # Normalize by stripping trailing periods/commas so "Acme Inc." and
@@ -993,6 +1097,10 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
         """True when the matched name is just a suffix with no real name words."""
         return not _suffix_strip_re.sub('', name).strip()
 
+    _det_re = re.compile(
+        r'^(?:The|This|That|These|Those|A|An)\s+', re.IGNORECASE,
+    )
+
     # --- Phase 1+2: Find suffix, then scan forward for label ---
     for suffix_match in _COMPANY_SUFFIX_RE.finditer(preamble):
         # Word boundary check: "Co" in "Contract" is not a real suffix.
@@ -1001,6 +1109,12 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
             continue
         name = suffix_match.group(1).strip().rstrip(",")
         if _is_bare_suffix(name):
+            continue
+        # Skip matches starting with a common determiner (e.g. "The Company").
+        if _det_re.match(name):
+            continue
+        # Skip matches starting with "Dear " (letter salutation, not a company).
+        if name.startswith("Dear "):
             continue
         # "Transition Services Agreement" is an agreement reference, not a
         # company.  Skip when the next word is a legal document type.
@@ -1020,6 +1134,9 @@ def detect_party_names(text: str) -> list[dict[str, str]]:
             continue
         name = match.group(1).strip()
         if _is_bare_suffix(name):
+            continue
+        # Skip matches starting with "Dear " (letter salutation, not a company).
+        if name.startswith("Dear "):
             continue
         label = match.group(2).strip()
         _add(name, label)

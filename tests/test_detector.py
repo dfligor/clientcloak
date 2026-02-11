@@ -583,11 +583,11 @@ class TestChunkText:
 class TestGlinerLabelMapping:
 
     def test_all_labels_mapped(self):
-        expected_labels = {"person", "organization", "address", "date", "money"}
+        expected_labels = {"person", "organization", "address"}
         assert set(_GLINER_LABEL_MAP.keys()) == expected_labels
 
     def test_mapped_types_are_valid(self):
-        expected_types = {"PERSON", "COMPANY", "ADDRESS", "DATE", "AMOUNT"}
+        expected_types = {"PERSON", "COMPANY", "ADDRESS"}
         assert set(_GLINER_LABEL_MAP.values()) == expected_types
 
 
@@ -867,11 +867,11 @@ class TestGlinerThresholds:
     """Tests for per-label GLiNER threshold filtering."""
 
     @patch("clientcloak.detector._get_gliner_model")
-    def test_person_at_low_score_passes_with_lower_threshold(self, mock_get_model):
-        """Person at 0.35 should pass since person threshold is 0.3."""
+    def test_person_at_threshold_passes(self, mock_get_model):
+        """Person at 0.65 should pass since person threshold is 0.6."""
         mock_model = MagicMock()
         mock_model.predict_entities.return_value = [
-            {"text": "John Smith", "label": "person", "score": 0.35},
+            {"text": "John Smith", "label": "person", "score": 0.65},
         ]
         mock_get_model.return_value = mock_model
         result = _run_gliner("John Smith works here.")
@@ -880,27 +880,15 @@ class TestGlinerThresholds:
 
     @patch("clientcloak.detector._get_gliner_model")
     def test_person_below_threshold_filtered(self, mock_get_model):
-        """Person at 0.2 should be filtered since person threshold is 0.3."""
+        """Person at 0.5 should be filtered since person threshold is 0.6."""
         mock_model = MagicMock()
         mock_model.predict_entities.return_value = [
-            {"text": "John Smith", "label": "person", "score": 0.2},
+            {"text": "John Smith", "label": "person", "score": 0.5},
         ]
         mock_get_model.return_value = mock_model
         result = _run_gliner("John Smith works here.")
         persons = [e for e in result if e.entity_type == "PERSON"]
         assert len(persons) == 0
-
-    @patch("clientcloak.detector._get_gliner_model")
-    def test_money_needs_higher_threshold(self, mock_get_model):
-        """Money at 0.4 should be filtered since money threshold is 0.5."""
-        mock_model = MagicMock()
-        mock_model.predict_entities.return_value = [
-            {"text": "$500", "label": "money", "score": 0.4},
-        ]
-        mock_get_model.return_value = mock_model
-        result = _run_gliner("Pay $500 now.")
-        amounts = [e for e in result if e.entity_type == "AMOUNT"]
-        assert len(amounts) == 0
 
 
 # ===================================================================
