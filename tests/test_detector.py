@@ -956,3 +956,77 @@ class TestBareAmountPattern:
         entities = detect_entities_regex(text)
         amounts = [e for e in entities if e.entity_type == "AMOUNT"]
         assert not any("11,200,000" in a.text for a in amounts)
+
+
+# ===================================================================
+# NER text length limit (max_chars)
+# ===================================================================
+
+class TestMaxNerChars:
+    """Tests for the max_chars parameter in detect_entities()."""
+
+    @patch("clientcloak.detector._run_gliner")
+    def test_truncates_text_for_gliner(self, mock_run_gliner):
+        """GLiNER should only receive the first max_chars characters."""
+        mock_run_gliner.return_value = []
+
+        text = "A" * 500
+        detect_entities(text, use_gliner=True, max_chars=100)
+
+        # _run_gliner should have been called with truncated text
+        call_args = mock_run_gliner.call_args
+        assert len(call_args[0][0]) == 100
+
+    @patch("clientcloak.detector._run_gliner")
+    def test_zero_means_unlimited(self, mock_run_gliner):
+        """max_chars=0 should pass the full text to GLiNER."""
+        mock_run_gliner.return_value = []
+
+        text = "A" * 500
+        detect_entities(text, use_gliner=True, max_chars=0)
+
+        call_args = mock_run_gliner.call_args
+        assert len(call_args[0][0]) == 500
+
+    @patch("clientcloak.detector._run_gliner")
+    def test_regex_still_scans_full_text(self, mock_run_gliner):
+        """Regex detection should scan the entire document regardless of max_chars."""
+        mock_run_gliner.return_value = []
+
+        # Put an email past the max_chars boundary
+        text = "A" * 200 + " john@example.com"
+        result = detect_entities(text, use_gliner=True, max_chars=100)
+
+        emails = [e for e in result if e.entity_type == "EMAIL"]
+        assert len(emails) == 1
+        assert emails[0].text == "john@example.com"
+
+    @patch("clientcloak.detector._run_gliner")
+    def test_entity_before_limit_detected(self, mock_run_gliner):
+        """An entity in the first max_chars characters should be detected by GLiNER."""
+        mock_run_gliner.return_value = [
+            DetectedEntity(
+                text="John Smith",
+                entity_type="PERSON",
+                confidence=0.95,
+                count=1,
+                suggested_placeholder="[Person-1]",
+            ),
+        ]
+
+        text = "John Smith works here. " + "A" * 500
+        result = detect_entities(text, use_gliner=True, max_chars=100)
+
+        persons = [e for e in result if e.entity_type == "PERSON"]
+        assert len(persons) == 1
+
+    @patch("clientcloak.detector._run_gliner")
+    def test_no_truncation_when_text_shorter_than_limit(self, mock_run_gliner):
+        """When text is shorter than max_chars, the full text is passed."""
+        mock_run_gliner.return_value = []
+
+        text = "Short text."
+        detect_entities(text, use_gliner=True, max_chars=200_000)
+
+        call_args = mock_run_gliner.call_args
+        assert call_args[0][0] == text

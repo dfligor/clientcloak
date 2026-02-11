@@ -128,6 +128,7 @@ class CloakConfig(BaseModel):
     strip_metadata: bool = True
     gliner_threshold: float = Field(default=0.5, ge=0, le=1)
     use_gliner: bool = True
+    max_ner_chars: int = 200_000  # Max chars fed to GLiNER NER (0 = unlimited)
 
 
 class CloakResult(BaseModel):

@@ -514,6 +514,7 @@ def detect_entities(
     party_names: list[str] | None = None,
     gliner_threshold: float = 0.5,
     use_gliner: bool = True,
+    max_chars: int = 0,
 ) -> list[DetectedEntity]:
     """
     Detect entities in text using all available backends.
@@ -537,6 +538,9 @@ def detect_entities(
         gliner_threshold: Confidence threshold for GLiNER results.
         use_gliner: If True, attempt GLiNER NER detection in addition to
             regex. Set to False for regex-only mode.
+        max_chars: Maximum number of characters fed to GLiNER NER.
+            Text beyond this limit is not scanned by NER (regex still
+            scans the full document). 0 means no limit.
 
     Returns:
         List of DetectedEntity instances sorted by count (descending).
@@ -547,7 +551,15 @@ def detect_entities(
     # 2. GLiNER detection (skip if disabled or not installed)
     if use_gliner:
         try:
-            gliner_entities = _run_gliner(text, gliner_threshold)
+            ner_text = text
+            if max_chars and len(text) > max_chars:
+                logger.warning(
+                    "Text length %d exceeds max_ner_chars %d; "
+                    "NER will scan first %d characters only",
+                    len(text), max_chars, max_chars,
+                )
+                ner_text = text[:max_chars]
+            gliner_entities = _run_gliner(ner_text, gliner_threshold)
             entities.extend(gliner_entities)
         except Exception:
             logger.warning("GLiNER detection failed, falling back to regex-only", exc_info=True)

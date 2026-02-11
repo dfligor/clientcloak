@@ -215,6 +215,7 @@ def _handle_cloak(args: argparse.Namespace) -> int:
         strip_metadata=not args.no_strip_metadata,
         gliner_threshold=args.threshold,
         use_gliner=not args.no_gliner,
+        max_ner_chars=args.max_ner_chars,
     )
 
     _print_header("Cloaking Document")
@@ -459,6 +460,13 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Skip automatic entity detection (emails, phones, SSNs, etc.)",
+    )
+    cloak_parser.add_argument(
+        "--max-ner-chars",
+        type=int,
+        default=200_000,
+        metavar="N",
+        help="Max characters fed to GLiNER NER; 0 = unlimited (default: 200000)",
     )
     cloak_parser.add_argument(
         "--alias-a",
