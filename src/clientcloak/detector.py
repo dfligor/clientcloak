@@ -30,6 +30,17 @@ _US_STATES = (
     "Virginia|Washington|West Virginia|Wisconsin|Wyoming|District of Columbia"
 )
 
+# Postal code patterns for address detection (US, Canadian, UK, Japanese, generic).
+_POSTAL_CODE = (
+    r'(?:'
+    r'\d{5}(?:-\d{4})?'                       # US ZIP / ZIP+4
+    r'|[A-Z]\d[A-Z]\s?\d[A-Z]\d'              # Canadian (K1A 0B1)
+    r'|[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}'    # UK (SW1A 1AA)
+    r'|\d{3}-\d{4}'                            # Japanese (100-0001)
+    r'|\d{4,6}'                                # Generic 4-6 digit (AU, DE, etc.)
+    r')'
+)
+
 # Regex patterns for structured PII. Each key becomes the entity_type.
 ENTITY_PATTERNS: dict[str, str] = {
     "EMAIL": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
@@ -40,7 +51,7 @@ ENTITY_PATTERNS: dict[str, str] = {
     "ADDRESS": (
         r"\d+\s+[A-Za-z\s\.]+(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Way|Lane|Ln)\.?"
         r"[,\s]+(?:(?:Suite|Ste|Apt|Unit)\s+\d+[,\s]+)?"
-        r"[A-Za-z\s]+,\s+(?:" + _US_STATES + r"|[A-Z]{2})\s+\d{5}(?:-\d{4})?"
+        r"[A-Za-z\s]+,\s+(?:" + _US_STATES + r"|[A-Z]{2})[,\s]+" + _POSTAL_CODE
     ),
     "URL": r"(?:https?://)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:/[^\s,)]*)?(?<![.,)])",
 }
@@ -112,21 +123,40 @@ _US_STATE_ABBREVS = (
 # Catches references like "in Seattle, Washington" that lack a street
 # address but are still identifying information in legal documents.
 _CITY_STATE_PATTERNS: list[re.Pattern[str]] = [
-    # Preposition + City, State [ZIP]
+    # Preposition + City, State [ZIP/postal code]
     re.compile(
         r'\b(?:in|at|of|from|to|near)\s+'
         r'((?:[A-Z][A-Za-z.\']+\s+){0,3}[A-Z][A-Za-z.\']+'
         r',\s*(?:' + _US_STATES + r'|' + _US_STATE_ABBREVS + r')'
-        r'(?:\s+\d{5}(?:-\d{4})?)?)'
+        r'(?:[,\s]+' + _POSTAL_CODE + r')?)'
         r'\b',
     ),
     # City, State on its own line (signature blocks)
     re.compile(
         r'^\s*((?:[A-Z][A-Za-z.\']+\s+){0,3}[A-Z][A-Za-z.\']+'
         r',\s*(?:' + _US_STATES + r'|' + _US_STATE_ABBREVS + r')'
-        r'(?:\s+\d{5}(?:-\d{4})?)?)'
+        r'(?:[,\s]+' + _POSTAL_CODE + r')?)'
         r'\s*$',
         re.MULTILINE,
+    ),
+]
+
+# Street suffixes for standalone street address detection.
+_STREET_SUFFIXES = (
+    r"Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|"
+    r"Way|Lane|Ln|Parkway|Pkwy|Circle|Cir|Court|Ct|Place|Pl|"
+    r"Plaza|Terrace|Ter|Trail|Trl|Highway|Hwy|Pike"
+)
+
+# Standalone street address patterns (no city/state/ZIP required).
+# Catches addresses like "5959 Las Colinas Boulevard" that span
+# multiple lines in legal documents.
+_STREET_ADDRESS_PATTERNS: list[re.Pattern[str]] = [
+    # Street number + name + suffix (standalone or with suite/floor)
+    re.compile(
+        r'\b(\d+\s+(?:[A-Za-z\.\']+ ){1,4}(?:' + _STREET_SUFFIXES + r')\.?'
+        r'(?:[,\s]+(?:Suite|Ste|Apt|Unit|Floor|Fl)\s*#?\s*\d+)?)\b',
+        re.IGNORECASE,
     ),
 ]
 
@@ -146,8 +176,8 @@ _GLINER_LABELS = list(_GLINER_LABEL_MAP.keys())
 
 _GLINER_THRESHOLDS: dict[str, float] = {
     "person": 0.3,
-    "organization": 0.35,
-    "address": 0.5,
+    "organization": 0.28,
+    "address": 0.35,
     "date": 0.3,
     "money": 0.5,
 }
@@ -505,6 +535,35 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
             suggested_placeholder=generate_placeholder("ADDRESS", address_idx + idx_offset),
         ))
         existing_addresses.add(location)
+    address_idx += len(city_state_counts)
+
+    # Standalone street address detection (no city/state required).
+    # Catches addresses like "5959 Las Colinas Boulevard" split across lines.
+    street_counts: Counter = Counter()
+    street_canonical: dict[str, str] = {}
+    for pattern in _STREET_ADDRESS_PATTERNS:
+        for match in pattern.finditer(text):
+            street = match.group(1).strip()
+            # Skip if already detected by full ADDRESS or city-state patterns
+            if street in existing_addresses:
+                continue
+            if any(street in addr for addr in existing_addresses):
+                continue
+            if any(addr in street for addr in existing_addresses):
+                continue
+            street_lower = street.lower()
+            if street_lower not in street_canonical:
+                street_canonical[street_lower] = street
+            street_counts[street_canonical[street_lower]] += 1
+    for idx_offset, (street, count) in enumerate(street_counts.most_common(), 1):
+        entities.append(DetectedEntity(
+            text=street,
+            entity_type="ADDRESS",
+            confidence=0.9,
+            count=count,
+            suggested_placeholder=generate_placeholder("ADDRESS", address_idx + idx_offset),
+        ))
+        existing_addresses.add(street)
 
     # Context-based bare amount detection (no $ prefix required)
     existing_amounts = {e.text for e in entities if e.entity_type == "AMOUNT"}
@@ -676,6 +735,8 @@ _CORPORATE_SUFFIXES = (
     r"Corporation",
     r"Company",
     r"International",
+    r"Bank",
+    r"Trust",
     # --- Standard US/UK ---
     r"Inc\.?",
     r"LLC",
@@ -704,6 +765,13 @@ _CORPORATE_SUFFIXES = (
     r"Pty\.?",                   # standalone (after Pty Ltd above)
     r"Oyj",                      # Finland (public) — before Oy
     r"Oy",                       # Finland
+    # --- Banking / European corporate forms ---
+    r"KGaA",                     # German limited partnership
+    r"ASA",                      # Norwegian
+    r"AG",                       # German Aktiengesellschaft
+    r"AB",                       # Swedish
+    r"SE",                       # European Societas Europaea
+    r"NV",                       # Dutch Naamloze Vennootschap
     # --- Generic descriptive suffixes ---
     r"Group",
     r"Partners",
@@ -723,9 +791,9 @@ _SUFFIX_PATTERN = "|".join(_CORPORATE_SUFFIXES)
 # capitalized words.  Allows an optional comma between the name and the
 # suffix (e.g. "Acme, Inc.").  Captures the full company name + suffix.
 _COMPANY_SUFFIX_RE = re.compile(
-    rf'((?:[A-Z][A-Za-z&\-\']+ )*'          # zero or more capitalized words
-    rf'(?:[A-Z][A-Za-z&\-\']+),?\s*'         # final name word + optional comma
-    rf'(?:{_SUFFIX_PATTERN})\.?)',            # corporate suffix
+    rf'((?:[A-Z\u00C0-\u024F][A-Za-z\u00C0-\u024F&\-\']+ )*'   # zero or more capitalized words
+    rf'(?:[A-Z\u00C0-\u024F][A-Za-z\u00C0-\u024F&\-\']+),?\s*'  # final name word + optional comma
+    rf'(?:{_SUFFIX_PATTERN})\.?)',                                 # corporate suffix
     re.UNICODE,
 )
 
@@ -746,14 +814,14 @@ _LABEL_AFTER_SUFFIX_RE = re.compile(
 # Legacy single-pass pattern kept as a fast path for simple cases:
 # "Company Name Inc. (the "Label")"
 _DEFINED_TERM_RE = re.compile(
-    rf'((?:[A-Z][A-Za-z&\-\']+ )*(?:{_SUFFIX_PATTERN}))(?:,?)\s+'
+    rf'((?:[A-Z\u00C0-\u024F][A-Za-z\u00C0-\u024F&\-\']+ )*(?:{_SUFFIX_PATTERN}))(?:,?)\s+'
     r'(?:\((?:the\s+)?["\u201c]([^"\u201d]+)["\u201d]\))',
     re.UNICODE,
 )
 
 # Pattern: "Dear Name," — catches addressee in letter-format agreements.
 _DEAR_RE = re.compile(
-    rf'Dear\s+((?:[A-Z][A-Za-z&\-\']+ )*(?:{_SUFFIX_PATTERN})),',
+    rf'Dear\s+((?:[A-Z\u00C0-\u024F][A-Za-z\u00C0-\u024F&\-\']+ )*(?:{_SUFFIX_PATTERN})),',
     re.UNICODE,
 )
 

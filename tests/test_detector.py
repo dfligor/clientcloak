@@ -1107,3 +1107,121 @@ class TestMaxNerChars:
 
         call_args = mock_run_gliner.call_args
         assert call_args[0][0] == text
+
+
+# ===================================================================
+# Standalone street address detection
+# ===================================================================
+
+class TestStreetAddressPattern:
+    """Tests for standalone street address detection (no city/state required)."""
+
+    def test_matches_street_only(self):
+        text = "located at 5959 Las Colinas Boulevard in the city"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("5959 Las Colinas Boulevard" in a.text for a in addresses)
+
+    def test_matches_street_with_suite(self):
+        text = "offices at 100 Anystreet Way, Suite 100 in the area"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("100 Anystreet Way" in a.text for a in addresses)
+
+    def test_matches_parkway(self):
+        text = "headquartered at 22777 Springwoods Village Parkway"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("22777 Springwoods Village Parkway" in a.text for a in addresses)
+
+    def test_no_false_positive_bare_number(self):
+        """'100 percent' should NOT be detected as a street address."""
+        text = "The value increased by 100 percent over the prior year."
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert not any("100 percent" in a.text for a in addresses)
+
+    def test_no_duplicate_with_full_address(self):
+        """Street should not be double-counted when full address is on one line."""
+        text = "located at 123 Main Street, Springfield, IL 62704"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        # Full address detected; "123 Main Street" should not also appear separately
+        full = [a for a in addresses if "Springfield" in a.text]
+        assert len(full) == 1
+        standalone = [a for a in addresses if a.text.strip() == "123 Main Street"]
+        assert len(standalone) == 0
+
+
+# ===================================================================
+# International postal code detection
+# ===================================================================
+
+class TestInternationalPostalCodes:
+    """Tests for international postal codes in city-state patterns."""
+
+    def test_matches_canadian_postal_code(self):
+        """Full address with Canadian postal code (ON matches [A-Z]{2})."""
+        text = "offices at 100 Bay Street, Toronto, ON M5V 2T6"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("Toronto" in a.text for a in addresses)
+
+    def test_matches_uk_postcode(self):
+        """Full address with UK postcode (UK matches [A-Z]{2})."""
+        text = "offices at 100 Fleet Street, London, UK EC2R 8AH"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("London" in a.text for a in addresses)
+
+    def test_matches_comma_before_zip(self):
+        text = "located at 601 Travis Street, Houston, Texas, 77002"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("Houston" in a.text for a in addresses)
+
+
+# ===================================================================
+# Banking / financial corporate suffix detection
+# ===================================================================
+
+class TestBankingCorporateSuffixes:
+    """Tests for banking and financial institution corporate suffixes."""
+
+    def test_detects_bank_suffix(self):
+        text = "Goldman Sachs Bank provides financial services."
+        entities = detect_entities_regex(text)
+        companies = [e for e in entities if e.entity_type == "COMPANY"]
+        assert any("Goldman Sachs Bank" in c.text for c in companies)
+
+    def test_detects_ag_suffix(self):
+        text = "Deutsche Bank AG is a global institution."
+        entities = detect_entities_regex(text)
+        companies = [e for e in entities if e.entity_type == "COMPANY"]
+        assert any("Deutsche Bank AG" in c.text for c in companies)
+
+    def test_detects_trust_suffix(self):
+        text = "Northern Trust administers the plan."
+        entities = detect_entities_regex(text)
+        companies = [e for e in entities if e.entity_type == "COMPANY"]
+        assert any("Northern Trust" in c.text for c in companies)
+
+
+# ===================================================================
+# Unicode company name detection
+# ===================================================================
+
+class TestUnicodeCompanyNames:
+    """Tests for company names with accented/Unicode characters."""
+
+    def test_detects_accented_company(self):
+        text = u"Soci\u00e9t\u00e9 G\u00e9n\u00e9rale SA is a French bank."
+        entities = detect_entities_regex(text)
+        companies = [e for e in entities if e.entity_type == "COMPANY"]
+        assert any("SA" in c.text and "G" in c.text for c in companies)
+
+    def test_detects_german_company(self):
+        text = "Bayerische Motoren Werke AG manufactures automobiles."
+        entities = detect_entities_regex(text)
+        companies = [e for e in entities if e.entity_type == "COMPANY"]
+        assert any("Bayerische Motoren Werke AG" in c.text for c in companies)
