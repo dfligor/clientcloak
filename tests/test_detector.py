@@ -932,6 +932,83 @@ class TestAddressFullStateNames:
 
 
 # ===================================================================
+# City/state location detection (no street address required)
+# ===================================================================
+
+class TestCityStatePattern:
+    """Tests for context-based city/state location detection."""
+
+    def test_matches_with_preposition_in(self):
+        text = "The company is headquartered in Seattle, Washington and operates nationwide."
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("Seattle, Washington" in a.text for a in addresses)
+
+    def test_matches_with_preposition_at(self):
+        text = "The office is located at Houston, Texas for the time being."
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("Houston, Texas" in a.text for a in addresses)
+
+    def test_matches_state_abbreviation(self):
+        text = "The firm is based in Austin, TX since 2020."
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("Austin, TX" in a.text for a in addresses)
+
+    def test_matches_multi_word_city(self):
+        text = "incorporated in New York, New York pursuant to the laws"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("New York, New York" in a.text for a in addresses)
+
+    def test_matches_on_own_line(self):
+        text = "Signed:\n\nSeattle, Washington\nDate: January 1, 2026"
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("Seattle, Washington" in a.text for a in addresses)
+
+    def test_matches_city_state_zip(self):
+        text = "offices in Portland, Oregon 97201 for the foreseeable future."
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert any("Portland, Oregon 97201" in a.text for a in addresses)
+
+    def test_no_false_positive_without_context(self):
+        """Bare 'Word, State' without preposition or line context should not match."""
+        text = "However, California enacted a new law last year."
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert not any("California" in a.text for a in addresses)
+
+    def test_no_false_positive_bank_of_america_na(self):
+        """'Bank of America, NA' should not match (NA is not a state abbreviation)."""
+        text = "Bank of America, NA provides banking services."
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        assert not any("America, NA" in a.text for a in addresses)
+
+    def test_does_not_duplicate_full_address(self):
+        """City/state should not be added separately if already part of a full address."""
+        text = "located at 123 Main Street, Springfield, IL 62704 in the area."
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        # Full address detected; "Springfield, IL 62704" should not also appear
+        full = [a for a in addresses if "123 Main Street" in a.text]
+        assert len(full) == 1
+        partial = [a for a in addresses if a.text.startswith("Springfield")]
+        assert len(partial) == 0
+
+    def test_counts_multiple_occurrences(self):
+        text = "offices in Seattle, Washington and also in Seattle, Washington."
+        entities = detect_entities_regex(text)
+        addresses = [e for e in entities if e.entity_type == "ADDRESS"]
+        seattle = [a for a in addresses if "Seattle, Washington" in a.text]
+        assert len(seattle) == 1
+        assert seattle[0].count == 2
+
+
+# ===================================================================
 # Context-aware bare amount detection (no $ prefix)
 # ===================================================================
 

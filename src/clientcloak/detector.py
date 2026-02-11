@@ -100,6 +100,36 @@ _DATE_PATTERNS: list[re.Pattern[str]] = [
     ),
 ]
 
+# Two-letter US state/territory abbreviations (explicit list to avoid
+# false positives from generic [A-Z]{2} matching "NA", "CO", etc.).
+_US_STATE_ABBREVS = (
+    "AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|"
+    "ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|"
+    "OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC"
+)
+
+# Context-based city/state location patterns (no street address required).
+# Catches references like "in Seattle, Washington" that lack a street
+# address but are still identifying information in legal documents.
+_CITY_STATE_PATTERNS: list[re.Pattern[str]] = [
+    # Preposition + City, State [ZIP]
+    re.compile(
+        r'\b(?:in|at|of|from|to|near)\s+'
+        r'((?:[A-Z][A-Za-z.\']+\s+){0,3}[A-Z][A-Za-z.\']+'
+        r',\s*(?:' + _US_STATES + r'|' + _US_STATE_ABBREVS + r')'
+        r'(?:\s+\d{5}(?:-\d{4})?)?)'
+        r'\b',
+    ),
+    # City, State on its own line (signature blocks)
+    re.compile(
+        r'^\s*((?:[A-Z][A-Za-z.\']+\s+){0,3}[A-Z][A-Za-z.\']+'
+        r',\s*(?:' + _US_STATES + r'|' + _US_STATE_ABBREVS + r')'
+        r'(?:\s+\d{5}(?:-\d{4})?)?)'
+        r'\s*$',
+        re.MULTILINE,
+    ),
+]
+
 
 # ---------------------------------------------------------------------------
 # GLiNER NER backend
@@ -446,6 +476,35 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
             count=count,
             suggested_placeholder=generate_placeholder("DATE", idx),
         ))
+
+    # Context-based city/state location detection (no street required).
+    # Catches "in Seattle, Washington", "New York, NY" on its own line, etc.
+    existing_addresses = {e.text for e in entities if e.entity_type == "ADDRESS"}
+    address_idx = len(existing_addresses)
+    city_state_counts: Counter = Counter()
+    city_state_canonical: dict[str, str] = {}
+    for pattern in _CITY_STATE_PATTERNS:
+        for match in pattern.finditer(text):
+            location = match.group(1).strip()
+            # Skip if already detected by the full ADDRESS pattern
+            if location in existing_addresses:
+                continue
+            # Skip if this is a substring of an already-detected address
+            if any(location in addr for addr in existing_addresses):
+                continue
+            loc_lower = location.lower()
+            if loc_lower not in city_state_canonical:
+                city_state_canonical[loc_lower] = location
+            city_state_counts[city_state_canonical[loc_lower]] += 1
+    for idx_offset, (location, count) in enumerate(city_state_counts.most_common(), 1):
+        entities.append(DetectedEntity(
+            text=location,
+            entity_type="ADDRESS",
+            confidence=0.9,
+            count=count,
+            suggested_placeholder=generate_placeholder("ADDRESS", address_idx + idx_offset),
+        ))
+        existing_addresses.add(location)
 
     # Context-based bare amount detection (no $ prefix required)
     existing_amounts = {e.text for e in entities if e.entity_type == "AMOUNT"}
