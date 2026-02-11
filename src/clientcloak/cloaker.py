@@ -48,10 +48,30 @@ def _build_mappings_and_replacements(
     called by both :func:`build_cloak_replacements` and :func:`cloak_document`.
     """
     mappings: dict[str, str] = {}
+
+    # Guard against label collisions: if both parties share the same label
+    # (e.g. both detected as "Form Agreement"), party_b would silently
+    # overwrite party_a in the mappings dict, leaving party_a's name uncloaked.
+    party_b_label = config.party_b_label
+    if (
+        config.party_a_name
+        and config.party_b_name
+        and config.party_a_label == config.party_b_label
+    ):
+        party_b_label = "Counterparty"
+        if party_b_label == config.party_a_label:
+            party_b_label = f"{config.party_b_label}-2"
+        logger.warning(
+            "Party label collision: both parties labelled '%s'. "
+            "Renaming party B to '%s'.",
+            config.party_a_label,
+            party_b_label,
+        )
+
     if config.party_a_name:
         mappings[f"[{config.party_a_label}]"] = config.party_a_name
     if config.party_b_name:
-        mappings[f"[{config.party_b_label}]"] = config.party_b_name
+        mappings[f"[{party_b_label}]"] = config.party_b_name
     for alias in config.party_a_aliases:
         mappings[f"[{alias.label}]"] = alias.name
     for alias in config.party_b_aliases:
@@ -71,7 +91,7 @@ def _build_mappings_and_replacements(
             cloak_replacements[sf] = f"[{config.party_a_label}]"
     for sf in config.party_b_short_forms:
         if sf and sf not in cloak_replacements:
-            cloak_replacements[sf] = f"[{config.party_b_label}]"
+            cloak_replacements[sf] = f"[{party_b_label}]"
 
     cloak_replacements = _expand_content_replacements(cloak_replacements)
     return mappings, cloak_replacements
@@ -198,6 +218,98 @@ def _expand_content_replacements(
     return expanded
 
 
+_PERSON_MONTH_STOPWORDS = frozenset({"May", "March", "August", "June", "April"})
+
+_PERSON_PLACEHOLDER_RE = re.compile(r"^\[Person-\d+\]$")
+
+
+def _expand_person_name_parts(
+    cloak_replacements: dict[str, str],
+    document_text: str,
+) -> dict[str, str]:
+    """Expand person-name replacements with shorter name variants.
+
+    Documents introduce people by full formal name ("Darren L. Woods") then
+    refer to them by shorter forms: "Darren Woods", "Woods", "Darren".  This
+    function generates plausible shorter variants and adds them to the
+    replacement dict when they actually appear in *document_text*.
+
+    Only entries whose placeholder matches ``[Person-N]`` are expanded.
+    """
+    new_entries: dict[str, str] = {}
+
+    for original, placeholder in cloak_replacements.items():
+        if not _PERSON_PLACEHOLDER_RE.match(placeholder):
+            continue
+
+        # Step 1: tokenize into significant words, stripping single-letter
+        # initials (e.g. "L." or "L").
+        tokens = original.split()
+        significant = [
+            t for t in tokens
+            if not re.match(r"^[A-Z]\.?$", t)
+        ]
+        if len(significant) < 2:
+            continue
+
+        # Step 2: generate all contiguous subsequences of length 1..N-1
+        n = len(significant)
+        candidates: list[str] = []
+        for length in range(1, n):
+            for start in range(n - length + 1):
+                candidates.append(" ".join(significant[start:start + length]))
+
+        # Step 3: first+last shortcut (if not already generated)
+        first_last = f"{significant[0]} {significant[-1]}"
+        if first_last not in candidates:
+            candidates.append(first_last)
+
+        # Step 4: filter each candidate
+        for candidate in candidates:
+            if len(candidate) < 3:
+                continue
+            if candidate in _PERSON_MONTH_STOPWORDS:
+                continue
+            if candidate in cloak_replacements or candidate in new_entries:
+                continue
+
+            # Case-sensitive word-boundary check: Title case or ALL-CAPS
+            title_pattern = r"\b" + re.escape(candidate) + r"\b"
+            upper_pattern = r"\b" + re.escape(candidate.upper()) + r"\b"
+            if re.search(title_pattern, document_text) or re.search(
+                upper_pattern, document_text
+            ):
+                new_entries[candidate] = placeholder
+
+    result = dict(cloak_replacements)
+    result.update(new_entries)
+    return result
+
+
+def _split_multiline_replacements(
+    cloak_replacements: dict[str, str],
+) -> dict[str, str]:
+    """Split multi-line replacement keys into per-line entries.
+
+    Detectors sometimes return cross-paragraph entities like
+    ``"6001 Bollinger Canyon Road\\nSan Ramon, CA 94583"``.  Since
+    ``replace_text_in_document()`` processes one paragraph at a time, the
+    multi-line key never matches.  This function splits each ``\\n``-containing
+    key into individual non-empty lines, each mapping to the same placeholder.
+    The original multi-line key is removed.
+    """
+    expanded = {}
+    for original, placeholder in cloak_replacements.items():
+        if "\n" in original:
+            for line in original.split("\n"):
+                line = line.strip()
+                if line and line not in expanded:
+                    expanded[line] = placeholder
+        else:
+            expanded[original] = placeholder
+    return expanded
+
+
 def sanitize_filename(filename: str, cloak_replacements: dict[str, str]) -> str:
     """
     Apply cloak replacements to a filename, case-insensitively.
@@ -301,11 +413,21 @@ def cloak_document(
     if findings:
         logger.info("Security scan found %d issue(s).", len(findings))
 
+    # --- 2b. Extract document text early (needed for name-variant expansion) ---
+    text_fragments = extract_all_text(doc)
+    full_text = "\n".join(t for t, _src in text_fragments)
+
     # --- 3. Build replacement dict (original -> placeholder) ---
     # Uses the shared helper so the logic is defined in one place.
     # mappings: placeholder -> original (for the mapping file)
     # cloak_replacements: original -> placeholder (for text replacement)
     mappings, cloak_replacements = _build_mappings_and_replacements(config)
+
+    # --- 3a. Post-process replacements ---
+    # Split multi-line keys (cross-paragraph addresses) into per-line entries.
+    cloak_replacements = _split_multiline_replacements(cloak_replacements)
+    # Expand person name placeholders with shorter variants found in the text.
+    cloak_replacements = _expand_person_name_parts(cloak_replacements, full_text)
 
     for alias in config.party_a_aliases:
         logger.info("Party A alias: %s -> [%s]", alias.name, alias.label)
@@ -366,9 +488,7 @@ def cloak_document(
     # --- 6. Process comments ---
     # Expand replacements with suffix-stripped variants so shortened names
     # (e.g. "Making Reign" for "Making Reign Inc.") are also caught.
-    # Pass full document text for initialism detection.
-    text_fragments = extract_all_text(doc)
-    full_text = "\n".join(t for t, _src in text_fragments)
+    # Pass full document text (extracted in step 2b) for initialism detection.
     comment_replacements = _expand_content_replacements(cloak_replacements, document_text=full_text)
     comment_author_mapping = process_comments(
         input_path=output_path,
