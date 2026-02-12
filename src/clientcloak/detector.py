@@ -97,6 +97,9 @@ _PERSON_FALSE_POSITIVE_WORDS = frozenset({
     "Arbitration", "Association", "Commission", "Authority", "Regulatory",
     "Industry", "Securities", "Exchange", "Financial", "Advisory",
     "Administrative", "Judicial", "Municipal", "Congressional",
+    # Document/agreement terms (regex matches "Consulting Agreement (the ...)")
+    "Agreement", "Consulting", "Services", "Transition", "License",
+    "Purchase", "Employment", "Separation", "Amendment",
 })
 
 # Context-based date patterns.

@@ -47,7 +47,14 @@ def _build_mappings_and_replacements(
     This is the single source of truth for replacement-building logic,
     called by both :func:`build_cloak_replacements` and :func:`cloak_document`.
     """
-    mappings: dict[str, str] = {}
+    # Start with additional_replacements so that party names (added next)
+    # always take precedence.  The frontend sends parties in BOTH the
+    # party_a/party_b fields AND inside additional_replacements.  When both
+    # parties share the same label (e.g. both "[Company]"), the JS dict
+    # loses one entry due to key collision.  By loading additional_replacements
+    # first and then overwriting with the authoritative party config, we
+    # guarantee both party names survive.
+    mappings: dict[str, str] = dict(config.additional_replacements)
 
     # Guard against label collisions: if both parties share the same label
     # (e.g. both detected as "Form Agreement"), party_b would silently
@@ -76,7 +83,6 @@ def _build_mappings_and_replacements(
         mappings[f"[{alias.label}]"] = alias.name
     for alias in config.party_b_aliases:
         mappings[f"[{alias.label}]"] = alias.name
-    mappings.update(config.additional_replacements)
 
     cloak_replacements = {
         original: placeholder for placeholder, original in mappings.items()
