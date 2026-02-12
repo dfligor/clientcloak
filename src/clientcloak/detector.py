@@ -576,6 +576,10 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
     for pattern in _PERSON_PATTERNS:
         for match in pattern.finditer(text):
             name = match.group(1).strip()
+            # Reject names starting with lowercase (IGNORECASE patterns can
+            # match non-names like "devices such" or "the Parties").
+            if name[0].islower():
+                continue
             # Filter false positives: skip if any word is a known place/legal term
             name_words = name.split()
             if any(w in _PERSON_FALSE_POSITIVE_WORDS for w in name_words):
