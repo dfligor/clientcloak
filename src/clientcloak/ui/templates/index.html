@@ -944,10 +944,17 @@ function clientCloak() {
                 const usedPartyLabels = new Set();
                 for (const party of parties) {
                     let label = party.label;
-                    // Dedup labels: if two parties share the same label
-                    // (e.g. both "(the Company)"), rename the second.
+                    // Dedup labels: if parties share the same label
+                    // (e.g. all "(the Company)"), rename to unique labels.
                     if (usedPartyLabels.has(label)) {
-                        label = (label === 'Counterparty') ? label + '-2' : 'Counterparty';
+                        const base = label;
+                        const candidates = ['Counterparty', 'Third-Party'];
+                        label = candidates.find(c => !usedPartyLabels.has(c));
+                        if (!label) {
+                            let n = 2;
+                            while (usedPartyLabels.has(base + '-' + n)) n++;
+                            label = base + '-' + n;
+                        }
                     }
                     usedPartyLabels.add(label);
                     this.replacements.push({
