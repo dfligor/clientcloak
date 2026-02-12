@@ -194,6 +194,7 @@ _PERSON_BLOCKLIST = frozenset({
     "attorney", "arbitrator", "party", "parties", "counsel", "judge",
     "plaintiff", "defendant", "claimant", "respondent", "witness",
     "executor", "trustee", "beneficiary", "agent", "representative",
+    "consultant", "contractor", "employee", "employer", "client", "vendor",
     "receiving party", "disclosing party", "prevailing party",
     "indemnifying party", "indemnified party", "injured party",
     "the parties", "the company", "the contractor", "the consultant",
@@ -217,7 +218,7 @@ _LEGAL_ABBREVIATIONS = frozenset({
     "DTSA", "CFAA", "FCPA", "SOX", "HIPAA", "FERPA", "COPPA",
     "GDPR", "CCPA", "TCPA", "CAN-SPAM", "RICO", "ERISA", "FLSA",
     "FMLA", "ADA", "OSHA", "EPA", "SEC", "FTC", "DOJ", "FBI",
-    "IRS", "EEOC", "NLRB", "FINRA", "CFTC", "OCC", "FDIC",
+    "IRS", "EEOC", "NLRB", "FINRA", "CFTC", "OCC", "FDIC", "AAA",
 })
 
 # Common corporate suffixes (lowercase) — all-caps short entities NOT in
@@ -226,6 +227,28 @@ _CORPORATE_SUFFIX_WORDS = frozenset({
     "inc", "llc", "llp", "lp", "ltd", "corp", "co", "plc", "pbc",
     "gmbh", "ag", "sa", "bv", "nv", "se", "ab", "oy", "oyj",
     "sas", "srl", "spa", "pllc", "lllp", "gp", "pc", "na", "fsb",
+})
+
+
+# Single-word generic legal roles that GLiNER misclassifies as COMPANY.
+_GENERIC_LEGAL_ROLES = frozenset({
+    "company", "contractor", "consultant", "vendor", "customer",
+    "employer", "employee", "landlord", "tenant", "licensor", "licensee",
+    "borrower", "lender", "buyer", "seller", "investor", "partner",
+    "party", "parties", "counterparty", "subcontractor",
+})
+
+# Institutional/regulatory organization keywords — entities containing these
+# are legal/governmental bodies, not companies to cloak.
+_INSTITUTIONAL_ORG_WORDS = frozenset({
+    "arbitration", "association", "commission", "authority", "regulatory",
+    "administration", "agency", "tribunal", "judiciary", "bureau",
+})
+
+# Generic words that GLiNER misclassifies as ADDRESS.
+_ADDRESS_FALSE_POSITIVES = frozenset({
+    "address", "addresses", "place", "location", "site", "area",
+    "premises", "property", "office", "offices",
 })
 
 
@@ -259,6 +282,15 @@ def _filter_gliner_entity(text: str, entity_type: str) -> str | None:
             return None
         stripped = cleaned
 
+        # Reject single-word generic legal roles (Company, Contractor, etc.).
+        if " " not in stripped and stripped.lower() in _GENERIC_LEGAL_ROLES:
+            return None
+
+        # Reject institutional/regulatory organizations.
+        entity_words_lower = [w.lower() for w in re.findall(r'[A-Za-z]+', stripped)]
+        if any(w in _INSTITUTIONAL_ORG_WORDS for w in entity_words_lower):
+            return None
+
         # Reject legal statutes: entities ending with Act, Code, etc.
         last_word = stripped.rsplit(None, 1)[-1].rstrip(".,;:").lower()
         if last_word in _LEGAL_STATUTE_SUFFIXES:
@@ -273,6 +305,14 @@ def _filter_gliner_entity(text: str, entity_type: str) -> str | None:
         # Reject all-caps 2-5 letter entities that aren't corporate suffixes.
         bare = stripped.rstrip(".,;:")
         if bare.isupper() and 2 <= len(bare) <= 5 and bare.lower() not in _CORPORATE_SUFFIX_WORDS:
+            return None
+
+    elif entity_type == "ADDRESS":
+        # Reject single generic words (address as verb/noun, not a location).
+        if stripped.lower() in _ADDRESS_FALSE_POSITIVES:
+            return None
+        # Reject phrases without digits — real addresses have street numbers.
+        if not any(c.isdigit() for c in stripped):
             return None
 
     return stripped
