@@ -941,10 +941,18 @@ function clientCloak() {
                 // Add suggested parties as COMPANY type
                 const parties = data.suggested_parties || [];
                 this._partyDefinedTerms = [];  // stash for alias submission
+                const usedPartyLabels = new Set();
                 for (const party of parties) {
+                    let label = party.label;
+                    // Dedup labels: if two parties share the same label
+                    // (e.g. both "(the Company)"), rename the second.
+                    if (usedPartyLabels.has(label)) {
+                        label = (label === 'Counterparty') ? label + '-2' : 'Counterparty';
+                    }
+                    usedPartyLabels.add(label);
                     this.replacements.push({
                         text: party.name,
-                        label: '[' + party.label + ']',
+                        label: '[' + label + ']',
                         type: 'COMPANY',
                         count: null,
                         checked: true,
