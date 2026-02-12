@@ -51,6 +51,8 @@ Sanitized Doc + Mapping File -> [Uncloak] -> Restored Doc
 - **Format Preservation**: Maintains document formatting, track changes, and comments
 - **100% Local**: All processing on your machine. No data sent anywhere.
 
+> **Note:** ClientCloak uses AI-powered detection to identify sensitive information. Like all AI tools, it may occasionally miss items or flag non-sensitive text. Always review the proposed redactions before sharing documents publicly or uploading to cloud services.
+
 ## Installation
 
 ```bash
