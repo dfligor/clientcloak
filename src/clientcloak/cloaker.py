@@ -292,6 +292,69 @@ def _expand_person_name_parts(
     return result
 
 
+_COMPANY_FRAGMENT_STOPWORDS = frozenset({
+    "the", "of", "and", "a", "an", "in", "for", "to", "at", "by",
+    "group", "holdings", "services", "partners", "associates",
+    "international", "global", "general", "first", "new",
+    "financial", "investment", "trust", "insurance",
+    "resources", "industries", "systems", "technologies", "solutions",
+    "properties", "development", "enterprises", "association",
+    "corporation", "company", "limited", "incorporated",
+})
+
+_COMPANY_PLACEHOLDER_RE = re.compile(r"^\[Company-\d+\]$")
+
+
+def _expand_company_name_parts(
+    cloak_replacements: dict[str, str],
+    document_text: str,
+) -> dict[str, str]:
+    """Expand company-name replacements with shorter name variants.
+
+    Multi-word company names like "Exxon Mobil Corporation" are often
+    referenced by shorter forms ("Exxon Mobil", "Exxon").  This function
+    generates contiguous sub-phrases, filters out single generic words
+    (e.g. "International", "Holdings"), and adds variants that actually
+    appear in *document_text*.
+
+    Only entries whose placeholder matches ``[Company-N]`` are expanded.
+    """
+    new_entries: dict[str, str] = {}
+
+    for original, placeholder in cloak_replacements.items():
+        if not _COMPANY_PLACEHOLDER_RE.match(placeholder):
+            continue
+
+        tokens = original.split()
+        if len(tokens) < 2:
+            continue
+
+        # Generate contiguous sub-phrases of length 1..N-1
+        n = len(tokens)
+        candidates: list[str] = []
+        for length in range(1, n):
+            for start in range(n - length + 1):
+                candidates.append(" ".join(tokens[start:start + length]))
+
+        for candidate in candidates:
+            if candidate in cloak_replacements or candidate in new_entries:
+                continue
+            # Skip single-word generic terms
+            if len(candidate.split()) == 1 and candidate.lower() in _COMPANY_FRAGMENT_STOPWORDS:
+                continue
+            if len(candidate) < 3:
+                continue
+
+            # Case-sensitive word-boundary match
+            pattern = r"\b" + re.escape(candidate) + r"\b"
+            if re.search(pattern, document_text):
+                new_entries[candidate] = placeholder
+
+    result = dict(cloak_replacements)
+    result.update(new_entries)
+    return result
+
+
 def _split_multiline_replacements(
     cloak_replacements: dict[str, str],
 ) -> dict[str, str]:
@@ -434,6 +497,8 @@ def cloak_document(
     cloak_replacements = _split_multiline_replacements(cloak_replacements)
     # Expand person name placeholders with shorter variants found in the text.
     cloak_replacements = _expand_person_name_parts(cloak_replacements, full_text)
+    # Expand company name placeholders with shorter variants found in the text.
+    cloak_replacements = _expand_company_name_parts(cloak_replacements, full_text)
 
     for alias in config.party_a_aliases:
         logger.info("Party A alias: %s -> [%s]", alias.name, alias.label)

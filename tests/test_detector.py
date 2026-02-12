@@ -869,10 +869,10 @@ class TestGlinerThresholds:
 
     @patch("clientcloak.detector._get_gliner_model")
     def test_person_at_threshold_passes(self, mock_get_model):
-        """Person at 0.65 should pass since person threshold is 0.6."""
+        """Person at 0.50 should pass since person threshold is 0.45."""
         mock_model = MagicMock()
         mock_model.predict_entities.return_value = [
-            {"text": "John Smith", "label": "person", "score": 0.65},
+            {"text": "John Smith", "label": "person", "score": 0.50},
         ]
         mock_get_model.return_value = mock_model
         result = _run_gliner("John Smith works here.")
@@ -881,10 +881,10 @@ class TestGlinerThresholds:
 
     @patch("clientcloak.detector._get_gliner_model")
     def test_person_below_threshold_filtered(self, mock_get_model):
-        """Person at 0.5 should be filtered since person threshold is 0.6."""
+        """Person at 0.40 should be filtered since person threshold is 0.45."""
         mock_model = MagicMock()
         mock_model.predict_entities.return_value = [
-            {"text": "John Smith", "label": "person", "score": 0.5},
+            {"text": "John Smith", "label": "person", "score": 0.40},
         ]
         mock_get_model.return_value = mock_model
         result = _run_gliner("John Smith works here.")

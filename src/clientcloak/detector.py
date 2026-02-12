@@ -180,8 +180,8 @@ _GLINER_LABEL_MAP: dict[str, str] = {
 _GLINER_LABELS = list(_GLINER_LABEL_MAP.keys())
 
 _GLINER_THRESHOLDS: dict[str, float] = {
-    "person": 0.6,
-    "organization": 0.6,
+    "person": 0.45,
+    "organization": 0.5,
     "address": 0.5,
 }
 
