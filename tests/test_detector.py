@@ -18,6 +18,7 @@ from clientcloak.detector import (
     _chunk_text,
     _run_gliner,
     _reassign_placeholders,
+    _filter_gliner_entity,
     _GLINER_LABEL_MAP,
 )
 from clientcloak.models import DetectedEntity
@@ -1213,3 +1214,56 @@ class TestUnicodeCompanyNames:
         entities = detect_entities_regex(text)
         companies = [e for e in entities if e.entity_type == "COMPANY"]
         assert any("Bayerische Motoren Werke AG" in c.text for c in companies)
+
+
+# ===================================================================
+# False-positive regression tests (2026-02-11)
+# ===================================================================
+
+class TestFalsePositiveRegressions:
+    """Regression tests for specific false positives found during QA."""
+
+    def test_dtsa_not_detected_as_company(self):
+        """DTSA should not be detected as COMPANY via regex backtracking (DT + SA)."""
+        text = "This agreement is subject to the DTSA and other applicable laws."
+        entities = detect_entities_regex(text)
+        companies = [e for e in entities if e.entity_type == "COMPANY"]
+        assert not any("DTSA" in c.text for c in companies)
+
+    def test_arbitration_association_not_detected_as_person(self):
+        """'Arbitration Association' should not be detected as PERSON."""
+        text = 'governed by the American Arbitration Association ("AAA") rules.'
+        entities = detect_entities_regex(text)
+        persons = [e for e in entities if e.entity_type == "PERSON"]
+        assert not any("Arbitration" in p.text for p in persons)
+
+    def test_securities_exchange_commission_not_person(self):
+        """'Securities Exchange Commission' should not be person."""
+        text = 'the Securities and Exchange Commission ("SEC") regulations.'
+        entities = detect_entities_regex(text)
+        persons = [e for e in entities if e.entity_type == "PERSON"]
+        assert not any("Securities" in p.text or "Exchange" in p.text for p in persons)
+
+    def test_gliner_filter_rejects_lowercase_person(self):
+        """GLiNER entities starting with lowercase should not be PERSON."""
+        assert _filter_gliner_entity("devices such", "PERSON") is None
+        assert _filter_gliner_entity("the parties", "PERSON") is None
+        assert _filter_gliner_entity("receiving party", "PERSON") is None
+
+    def test_gliner_filter_accepts_real_person(self):
+        """Real person names should pass through the GLiNER filter."""
+        assert _filter_gliner_entity("David Fligor", "PERSON") == "David Fligor"
+        assert _filter_gliner_entity("Michael Chen", "PERSON") == "Michael Chen"
+
+    def test_gliner_filter_rejects_legal_abbrevs_in_company(self):
+        """Known legal abbreviations should be rejected as COMPANY."""
+        assert _filter_gliner_entity("DTSA", "COMPANY") is None
+        assert _filter_gliner_entity("FINRA", "COMPANY") is None
+        assert _filter_gliner_entity("Securities and Exchange Commission (SEC)", "COMPANY") is None
+
+    def test_finra_full_name_not_company(self):
+        """Full name with embedded legal abbreviation should be rejected."""
+        result = _filter_gliner_entity(
+            "Financial Industry Regulatory Authority (FINRA)", "COMPANY"
+        )
+        assert result is None

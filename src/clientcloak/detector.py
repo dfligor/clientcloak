@@ -93,6 +93,10 @@ _PERSON_FALSE_POSITIVE_WORDS = frozenset({
     "Stock", "Market", "Trust", "Federal", "National", "District",
     "San", "Los", "Las", "Fort", "Santa", "Saint", "Monte",
     "Bank", "First", "Second", "Third", "Fourth", "Fifth",
+    # Legal / institutional terms that appear before parenthetical abbreviations
+    "Arbitration", "Association", "Commission", "Authority", "Regulatory",
+    "Industry", "Securities", "Exchange", "Financial", "Advisory",
+    "Administrative", "Judicial", "Municipal", "Congressional",
 })
 
 # Context-based date patterns.
@@ -240,6 +244,10 @@ def _filter_gliner_entity(text: str, entity_type: str) -> str | None:
         # Reject pronouns, common nouns, and legal terms.
         if stripped.lower() in _PERSON_BLOCKLIST:
             return None
+        # Reject entities where the first word starts with lowercase
+        # (real person names are capitalized). Catches "devices such", etc.
+        if stripped[0].islower():
+            return None
 
     elif entity_type == "COMPANY":
         # Strip leading determiners/prepositions.
@@ -253,8 +261,10 @@ def _filter_gliner_entity(text: str, entity_type: str) -> str | None:
         if last_word in _LEGAL_STATUTE_SUFFIXES:
             return None
 
-        # Reject known legal abbreviations.
-        if stripped.rstrip(".,;:") in _LEGAL_ABBREVIATIONS:
+        # Reject known legal abbreviations — exact match or any word/parenthetical
+        # in the entity (catches "Securities and Exchange Commission (SEC)").
+        entity_words = re.findall(r'[A-Za-z]+', stripped)
+        if any(w in _LEGAL_ABBREVIATIONS for w in entity_words):
             return None
 
         # Reject all-caps 2-5 letter entities that aren't corporate suffixes.
@@ -699,6 +709,11 @@ def detect_entities_regex(text: str) -> list[DetectedEntity]:
             continue
         # Skip matches starting with "Dear " (letter salutation)
         if name.startswith("Dear "):
+            continue
+        # Skip legal abbreviations caught by regex backtracking
+        # (e.g. "DTSA" split into name "DT" + suffix "SA").
+        name_collapsed = re.sub(r'[\s,.\-]+', '', name)
+        if name_collapsed in _LEGAL_ABBREVIATIONS:
             continue
         # Case-insensitive dedup: merge "VENTMARKET, LLC" with "VentMarket, LLC"
         name_lower = name.lower()
