@@ -82,9 +82,30 @@
                     </template>
 
                     <template x-if="uploading">
-                        <div class="flex flex-col items-center gap-3">
+                        <div class="flex flex-col items-center gap-4">
                             <div class="w-10 h-10 border-2 border-teal border-t-transparent rounded-full animate-spin" aria-hidden="true"></div>
-                            <p class="text-sm text-gray-500">Scanning your document...</p>
+                            <ul class="progress-checklist text-left text-sm w-full max-w-xs" role="list" aria-label="Upload progress">
+                                <li :class="uploadStep >= 1 ? 'completed' : (uploadStep === 0 ? 'active' : 'pending')">
+                                    <span class="status-check" :class="uploadStep >= 1 ? 'done' : (uploadStep === 0 ? 'active' : 'waiting')" aria-hidden="true"></span>
+                                    Loading document
+                                </li>
+                                <li :class="uploadStep >= 2 ? 'completed' : (uploadStep === 1 ? 'active' : 'pending')">
+                                    <span class="status-check" :class="uploadStep >= 2 ? 'done' : (uploadStep === 1 ? 'active' : 'waiting')" aria-hidden="true"></span>
+                                    Inspecting document
+                                </li>
+                                <li :class="uploadStep >= 3 ? 'completed' : (uploadStep === 2 ? 'active' : 'pending')">
+                                    <span class="status-check" :class="uploadStep >= 3 ? 'done' : (uploadStep === 2 ? 'active' : 'waiting')" aria-hidden="true"></span>
+                                    Extracting text
+                                </li>
+                                <li :class="uploadStep >= 4 ? 'completed' : (uploadStep === 3 ? 'active' : 'pending')">
+                                    <span class="status-check" :class="uploadStep >= 4 ? 'done' : (uploadStep === 3 ? 'active' : 'waiting')" aria-hidden="true"></span>
+                                    Identifying parties
+                                </li>
+                                <li :class="uploadStep >= 5 ? 'completed' : (uploadStep === 4 ? 'active' : 'pending')">
+                                    <span class="status-check" :class="uploadStep >= 5 ? 'done' : (uploadStep === 4 ? 'active' : 'waiting')" aria-hidden="true"></span>
+                                    Searching for confidential information
+                                </li>
+                            </ul>
                         </div>
                     </template>
 
@@ -853,6 +874,7 @@ function clientCloak() {
 
         // ---- Upload ----
         uploading: false,
+        uploadStep: 0,       // 0-5: completed upload processing steps
         processing: false,
 
         // ---- Security ----
@@ -929,8 +951,12 @@ function clientCloak() {
         async handleCloakUpload(file) {
             if (!file) return;
             this.uploading = true;
+            this.uploadStep = 0;
             try {
-                const data = await uploadFile(file);
+                const data = await uploadFile(file, (event) => {
+                    this.uploadStep = event.step;
+                });
+                this.uploadStep = 5;
                 this.sessionId = data.session_id;
                 this.filename = data.filename;
                 this.securityFindings = data.security_findings || [];
@@ -997,6 +1023,7 @@ function clientCloak() {
                 showToast(err.message, 'error');
             } finally {
                 this.uploading = false;
+                this.uploadStep = 0;
             }
         },
 
@@ -1251,6 +1278,7 @@ ${docxStyles}
             this.sessionId = null;
             this.filename = null;
             this.uploading = false;
+            this.uploadStep = 0;
             this.securityFindings = [];
             this.metadata = {};
             this.comments = {};

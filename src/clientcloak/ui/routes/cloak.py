@@ -11,7 +11,7 @@ import json
 
 import structlog
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from ...cloaker import build_cloak_replacements, cloak_document, preview_entities, sanitize_filename
 from ...comments import inspect_comments
@@ -77,35 +77,45 @@ async def upload_document(file: UploadFile = File(...)):
         logger.error("Failed to save uploaded file", session_id=session_id, error=str(exc))
         raise HTTPException(status_code=500, detail="Failed to save uploaded file.") from exc
 
-    # --- Run automatic scans ---
-    # These are CPU-bound operations; run in a thread to avoid blocking
-    # the async event loop.
+    # --- Stream processing progress as NDJSON ---
+    return StreamingResponse(
+        _upload_progress_stream(session_id, upload_path, file.filename),
+        media_type="application/x-ndjson",
+    )
+
+
+async def _upload_progress_stream(session_id: str, upload_path, filename: str):
+    """Yield NDJSON progress events as each upload processing step completes."""
+    total = 5
+
+    def _event(stage, step, message):
+        return json.dumps({"stage": stage, "step": step, "total": total, "message": message}) + "\n"
+
+    # Step 1: Load document (active when uploadStep=0)
     try:
         doc = await asyncio.to_thread(load_document, upload_path)
     except Exception as exc:
         logger.error("Failed to load document", session_id=session_id, error=str(exc))
-        raise HTTPException(
-            status_code=400,
-            detail="Failed to load document. Ensure it is a valid .docx file.",
-        ) from exc
+        yield json.dumps({"stage": "error", "message": "Failed to load document. Ensure it is a valid .docx file."}) + "\n"
+        return
+    yield _event("loading", 1, "Loading document...")
 
-    # Security scan
+    # Step 2: Security scan + metadata + comments (active when uploadStep=1)
+    security_findings = []
     try:
         findings = await asyncio.to_thread(scan_document, doc)
         security_findings = [f.model_dump() for f in findings]
     except Exception as exc:
         logger.warning("Security scan failed", session_id=session_id, error=str(exc))
-        security_findings = []
 
-    # Metadata inspection
+    metadata = {}
     try:
         metadata_report = await asyncio.to_thread(inspect_metadata, upload_path)
         metadata = metadata_report.model_dump()
     except Exception as exc:
         logger.warning("Metadata inspection failed", session_id=session_id, error=str(exc))
-        metadata = {}
 
-    # Comment inspection
+    comments = {"authors": [], "count": 0}
     try:
         comments_list, authors_list = await asyncio.to_thread(inspect_comments, upload_path)
         comments = {
@@ -114,50 +124,62 @@ async def upload_document(file: UploadFile = File(...)):
         }
     except Exception as exc:
         logger.warning("Comment inspection failed", session_id=session_id, error=str(exc))
-        comments = {"authors": [], "count": 0}
+    yield _event("scanning", 2, "Inspecting document for security issues...")
 
-    # --- Extract text for entity and party detection ---
+    # Step 3: Extract text (active when uploadStep=2)
     preamble_text = ""
-    detected_entities = []
-    suggested_parties = []
+    full_text = ""
+    non_empty = []
     try:
         text_fragments = await asyncio.to_thread(extract_all_text, doc)
         full_text = "\n".join(text for text, _source in text_fragments)
-
-        # Preamble: first ~5 non-empty paragraphs
         non_empty = [text for text, _source in text_fragments if text.strip()]
         preamble_text = "\n".join(non_empty[:5])
+    except Exception as exc:
+        logger.warning("Text extraction failed", session_id=session_id, error=str(exc))
+    yield _event("extracting", 3, "Extracting document text...")
 
-        # Detect party names from preamble (must run BEFORE entity detection
-        # so we can filter out party name variants like ALL-CAPS forms)
-        preamble_for_parties = "\n".join(non_empty[:10])  # slightly more context for party detection
+    # Step 4: Detect party names (active when uploadStep=3)
+    suggested_parties = []
+    party_names_for_filter = []
+    try:
+        preamble_for_parties = "\n".join(non_empty[:10])
         suggested_parties = await asyncio.to_thread(detect_party_names, preamble_for_parties)
-
-        # Filter entities using detected party names to avoid duplicates
-        # (e.g. "VENTMARKET, LLC" in signature blocks vs "VentMarket, LLC")
         party_names_for_filter = [p["name"] for p in suggested_parties]
-        entities = await asyncio.to_thread(detect_entities, full_text, party_names=party_names_for_filter, max_chars=200_000)
+    except Exception as exc:
+        logger.warning("Party detection failed", session_id=session_id, error=str(exc))
+    yield _event("parties", 4, "Identifying parties in the agreement...")
+
+    # Step 5: Detect entities (active when uploadStep=4) — slowest step (ONNX inference)
+    detected_entities = []
+    try:
+        entities = await asyncio.to_thread(
+            detect_entities, full_text, party_names=party_names_for_filter, max_chars=200_000
+        )
         detected_entities = [e.model_dump() for e in entities]
     except Exception as exc:
-        logger.warning("Text extraction/detection failed", session_id=session_id, error=str(exc))
+        logger.warning("Entity detection failed", session_id=session_id, error=str(exc))
 
-    # --- Save the original filename for later reference ---
+    logger.info("Upload processing complete", session_id=session_id, filename=filename)
+
+    # Save the original filename for later reference
     try:
         name_file = get_session_file(session_id, ".original_filename")
-        name_file.write_text(file.filename, encoding="utf-8")
+        name_file.write_text(filename, encoding="utf-8")
     except Exception as exc:
         logger.debug("Failed to save original filename", error=str(exc))
 
-    return JSONResponse(content={
+    # Final event with full result payload
+    yield json.dumps({"stage": "complete", "data": {
         "session_id": session_id,
-        "filename": file.filename,
+        "filename": filename,
         "security_findings": security_findings,
         "metadata": metadata,
         "comments": comments,
         "preamble_text": preamble_text,
         "detected_entities": detected_entities,
         "suggested_parties": suggested_parties,
-    })
+    }}) + "\n"
 
 
 @router.post("/detect-entities")

@@ -7,10 +7,12 @@
 
 /**
  * Upload a .docx file to the server.
+ * Reads a streaming NDJSON response and calls onProgress for each step.
  * @param {File} file
+ * @param {Function} [onProgress] Called with {stage, step, total, message} for each step
  * @returns {Promise<Object>} {session_id, filename, security_findings[], metadata, comments}
  */
-async function uploadFile(file) {
+async function uploadFile(file, onProgress) {
     validateDocxFile(file);
 
     const form = new FormData();
@@ -25,7 +27,33 @@ async function uploadFile(file) {
         const err = await safeJson(res);
         throw new Error(err.detail || 'Upload failed. Please try again.');
     }
-    return res.json();
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result = null;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+            if (!line.trim()) continue;
+            const event = JSON.parse(line);
+            if (event.stage === 'complete') {
+                result = event.data;
+            } else if (event.stage === 'error') {
+                throw new Error(event.message);
+            } else if (onProgress) {
+                onProgress(event);
+            }
+        }
+    }
+
+    if (!result) throw new Error('Upload failed. No response received.');
+    return result;
 }
 
 /**
