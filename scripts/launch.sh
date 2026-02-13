@@ -7,6 +7,11 @@ source venv/bin/activate
 
 PORT="${1:-8000}"
 
+if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
+    echo "Error: PORT must be a number, got '$PORT'" >&2
+    exit 1
+fi
+
 # Kill existing instance on that port if running
 PID=$(lsof -ti :"$PORT" 2>/dev/null || true)
 if [ -n "$PID" ]; then

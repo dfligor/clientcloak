@@ -6,8 +6,8 @@ operation gets its own session directory that holds uploaded files, mapping
 files, and cloaked output. Sessions auto-expire after 24 hours to prevent
 unbounded disk growth.
 
-Session IDs are 8-character UUID prefixes -- short enough for URLs and
-log messages, long enough to avoid collisions in practice.
+Session IDs are 16-character UUID prefixes -- short enough for URLs and
+log messages, long enough to resist brute-force enumeration.
 """
 
 import re
@@ -21,8 +21,8 @@ from .paths import get_sessions_dir
 SESSION_TTL = timedelta(hours=24)
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 
-# Session IDs must be exactly 8 lowercase hex characters.
-_SESSION_ID_RE = re.compile(r"^[a-f0-9]{8}$")
+# Session IDs must be exactly 16 lowercase hex characters.
+_SESSION_ID_RE = re.compile(r"^[a-f0-9]{16}$")
 
 # Filenames inside sessions must be simple names (no path separators or traversal).
 _SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
@@ -40,7 +40,7 @@ def create_session() -> str:
     Returns:
         An 8-character hexadecimal session ID.
     """
-    session_id = uuid.uuid4().hex[:8]
+    session_id = uuid.uuid4().hex[:16]
     session_dir = get_sessions_dir() / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
 
@@ -56,7 +56,7 @@ def get_session_dir(session_id: str) -> Path:
     Return the directory path for an existing session.
 
     Args:
-        session_id: The 8-character session identifier returned by
+        session_id: The 16-character session identifier returned by
             ``create_session``.
 
     Returns:
@@ -90,7 +90,7 @@ def get_session_file(session_id: str, filename: str) -> Path:
     reading existing files and writing new ones.
 
     Args:
-        session_id: The 8-character session identifier.
+        session_id: The 16-character session identifier.
         filename: The name of the file within the session directory.
 
     Returns:

@@ -37,9 +37,9 @@ def mock_sessions_dir(tmp_path):
 class TestCreateSession:
     """Tests for create_session()."""
 
-    def test_returns_8char_hex_id(self, mock_sessions_dir):
+    def test_returns_16char_hex_id(self, mock_sessions_dir):
         sid = create_session()
-        assert len(sid) == 8
+        assert len(sid) == 16
         assert all(c in "0123456789abcdef" for c in sid)
 
     def test_creates_directory(self, mock_sessions_dir):
@@ -75,7 +75,7 @@ class TestGetSessionDir:
 
     def test_raises_for_nonexistent_session(self, mock_sessions_dir):
         with pytest.raises(ValueError, match="Session not found"):
-            get_session_dir("deadbeef")
+            get_session_dir("deadbeefdeadbeef")
 
 
 # ===================================================================

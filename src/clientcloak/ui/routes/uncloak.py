@@ -8,6 +8,8 @@ uncloaking pipeline, and downloading the restored document.
 from __future__ import annotations
 
 import asyncio
+import re
+import shutil
 
 import structlog
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -76,6 +78,7 @@ async def uncloak(
             while chunk := await redlined_file.read(1024 * 1024):  # 1 MB chunks
                 redlined_size += len(chunk)
                 if redlined_size > _MAX_DOCX_BYTES:
+                    shutil.rmtree(get_session_dir(session_id), ignore_errors=True)
                     raise HTTPException(
                         status_code=413,
                         detail="Document too large. Maximum upload size is 100 MB.",
@@ -88,6 +91,7 @@ async def uncloak(
             while chunk := await mapping_file.read(1024 * 1024):
                 mapping_size += len(chunk)
                 if mapping_size > _MAX_MAPPING_BYTES:
+                    shutil.rmtree(get_session_dir(session_id), ignore_errors=True)
                     raise HTTPException(
                         status_code=413,
                         detail="Mapping file too large. Maximum size is 10 MB.",
@@ -98,7 +102,10 @@ async def uncloak(
             "Files uploaded for uncloaking",
             session_id=session_id,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
+        shutil.rmtree(get_session_dir(session_id), ignore_errors=True)
         logger.error("Failed to save uploaded files", session_id=session_id, error=str(exc))
         raise HTTPException(status_code=500, detail="Failed to save uploaded files.") from exc
 
@@ -141,6 +148,8 @@ async def uncloak(
                 mapping.mappings.items(), key=lambda kv: len(kv[0]), reverse=True
             ):
                 stem = stem.replace(placeholder, original)
+            # Sanitize characters invalid in filenames across platforms
+            stem = re.sub(r'[<>:"/\\|?*\x00-\x1f\n\r]', '_', stem)
             uncloaked_filename = f"{stem}_uncloaked.docx"
     except Exception as exc:
         logger.debug("Failed to compute uncloaked filename", error=str(exc))
