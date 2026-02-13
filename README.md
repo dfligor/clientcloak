@@ -53,6 +53,16 @@ Sanitized Doc + Mapping File -> [Uncloak] -> Restored Doc
 
 > **Note:** ClientCloak uses AI-powered detection to identify sensitive information. Like all AI tools, it may occasionally miss items or flag non-sensitive text. Always review the proposed redactions before sharing documents publicly or uploading to cloud services.
 
+## Detection
+
+ClientCloak uses two detection layers:
+
+- **Pattern matching** — Works out of the box. Catches structured data (email addresses, phone numbers, physical addresses, dollar amounts, SSNs, EINs, URLs) and company names with standard corporate suffixes (Inc., LLC, Corp., Ltd., etc.). Also detects party names defined with parenthetical terms — e.g., `Acme, Inc. ("Acme")`.
+
+- **Machine learning (optional)** — A [GLiNER](https://github.com/urchade/GLiNER) ONNX model that reads through your document and recognizes names and organizations based on context, even when they don't follow a predictable pattern. This catches things like a person's name mentioned in a sentence that pattern matching alone would miss. See [Enabling ML Detection](#enabling-ml-detection) below.
+
+Results from both layers are combined and deduplicated.
+
 ## Installation
 
 ```bash
@@ -62,6 +72,16 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"
 ```
+
+### Enabling ML Detection
+
+The ML layer is optional. Without it, ClientCloak uses pattern matching only, which still catches the majority of sensitive information.
+
+To enable ML-powered detection, download a GLiNER ONNX model and place it in a `models/gliner/` directory:
+
+1. Download a GLiNER model from [HuggingFace](https://huggingface.co/urchade/gliner_medium-v2.1) (the ONNX variant)
+2. Place the model files (`model.onnx`, `tokenizer.json`, `gliner_config.json`) in `models/gliner/`
+3. Restart ClientCloak — the ML layer activates automatically when the model is present
 
 ## Quick Start
 
