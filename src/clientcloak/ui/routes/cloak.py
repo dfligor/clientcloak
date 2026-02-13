@@ -375,7 +375,7 @@ async def cloak(
 
     # --- Compute sanitized filenames for frontend downloads ---
     sanitized_filename = "cloaked.docx"
-    sanitized_mapping_filename = "mapping.json"
+    sanitized_mapping_filename = "Secret_Decoder_Ring.json"
     try:
         name_file = session_dir / ".original_filename"
         if name_file.is_file():
@@ -383,7 +383,7 @@ async def cloak(
             stem = original_name.rsplit(".", 1)[0]
             sanitized_stem = sanitize_filename(stem, cloak_replacements)
             sanitized_filename = f"{sanitized_stem}_cloaked.docx"
-            sanitized_mapping_filename = f"{stem}_mapping.json"
+            sanitized_mapping_filename = f"{stem}_Secret_Decoder_Ring.json"
     except Exception as exc:
         logger.debug("Failed to compute sanitized filenames", error=str(exc))
 
@@ -460,12 +460,12 @@ async def download_file(session_id: str, file_type: str):
                         replacements_file.read_text(encoding="utf-8")
                     )
                     stem = sanitize_filename(stem, cloak_replacements)
-                download_name = f"{stem}_mapping.json"
+                download_name = f"{stem}_Secret_Decoder_Ring.json"
             else:
-                download_name = "mapping.json"
+                download_name = "Secret_Decoder_Ring.json"
         except Exception as exc:
             logger.debug("Failed to compute mapping download name", error=str(exc))
-            download_name = "mapping.json"
+            download_name = "Secret_Decoder_Ring.json"
 
     if not file_path.is_file():
         raise HTTPException(

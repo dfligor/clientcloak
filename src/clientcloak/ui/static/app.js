@@ -180,7 +180,7 @@ function validateDocxFile(file) {
 function validateJsonFile(file) {
     if (!file) throw new Error('No file selected.');
     if (!file.name.toLowerCase().endsWith('.json')) {
-        throw new Error('Missing the mapping key? It\'s the .json file you downloaded when you cloaked.');
+        throw new Error('Missing the Decoder Key? It\'s the .json file you downloaded when you cloaked.');
     }
 }
 

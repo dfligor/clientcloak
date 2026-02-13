@@ -252,6 +252,7 @@
                                     <td class="px-4 py-2.5">
                                         <input type="checkbox"
                                                x-model="item.checked"
+                                               @change="$nextTick(() => highlightAutoEntities())"
                                                class="rounded border-gray-300 text-teal focus:ring-teal/30"
                                                :aria-label="'Include ' + item.text">
                                     </td>
@@ -569,11 +570,11 @@
                             <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
                         </svg>
                     </div>
-                    <h3 class="text-base font-semibold text-navy mb-1">Mapping Key</h3>
+                    <h3 class="text-base font-semibold text-navy mb-1">Decoder Key</h3>
                     <p class="text-xs text-gray-500 mb-4">Keep this private. You will need it to restore the original information.</p>
                     <button class="btn-primary btn-teal w-full justify-center"
                             @click="downloadMappingFile()"
-                            aria-label="Download mapping key">
+                            aria-label="Download Decoder Key">
                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                         Download
                     </button>
@@ -611,7 +612,7 @@
                     </li>
                     <li class="flex items-start gap-2">
                         <span class="text-teal mt-0.5 flex-shrink-0">&#x2022;</span>
-                        <span><strong>Restore later</strong> -- Come back anytime with the mapping key to restore the original information</span>
+                        <span><strong>Restore later</strong> -- Come back anytime with the Decoder Key to restore the original information</span>
                     </li>
                 </ul>
             </div>
@@ -704,7 +705,7 @@
         <div x-show="uncloakStep === 1" class="step-enter">
             <div class="text-center mb-6">
                 <h1 class="text-2xl font-bold text-navy mb-2">Restore the original information</h1>
-                <p class="text-gray-500">Upload a cloaked document along with its mapping key, and we will restore the original information.</p>
+                <p class="text-gray-500">Upload a cloaked document along with its Decoder Key, and we will restore the original information.</p>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto mb-8">
@@ -757,7 +758,7 @@
                      tabindex="0"
                      @keydown.enter="$refs.uncloakMapInput.click()"
                      @keydown.space.prevent="$refs.uncloakMapInput.click()"
-                     aria-label="Upload mapping key file">
+                     aria-label="Upload Decoder Key file">
 
                     <input type="file"
                            accept=".json"
@@ -772,7 +773,7 @@
                                     <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
                                 </svg>
                                 <div>
-                                    <p class="text-sm font-medium text-navy">Mapping Key</p>
+                                    <p class="text-sm font-medium text-navy">Decoder Key</p>
                                     <p class="text-xs text-gray-400 mt-0.5">Drop the .json file you saved earlier</p>
                                 </div>
                             </div>
@@ -1156,6 +1157,7 @@ ${docxStyles}
                 });
 
                 this.docPreviewRendered = true;
+                this.$nextTick(() => this.highlightAutoEntities());
             } catch (err) {
                 console.error('docx-preview error:', err);
                 this.docPreviewError = 'Could not render document preview.';
@@ -1259,7 +1261,7 @@ ${docxStyles}
                 showToast('Download not available. Please try cloaking again.', 'error');
                 return;
             }
-            const name = this.result.sanitized_mapping_filename || 'mapping.json';
+            const name = this.result.sanitized_mapping_filename || 'Secret_Decoder_Ring.json';
             downloadFile(this.result.mapping_url, name);
         },
 
@@ -1391,6 +1393,81 @@ ${docxStyles}
             } catch (e) {
                 showToast('Could not copy. Please select and copy manually.', 'error');
             }
+        },
+
+
+        // ==========================
+        // Auto-Detect Highlighting
+        // ==========================
+
+        highlightAutoEntities() {
+            const iframe = this.$refs.docPreviewFrame;
+            if (!iframe) return;
+            let doc;
+            try { doc = iframe.contentDocument || iframe.contentWindow.document; } catch (e) { return; }
+            if (!doc || !doc.body) return;
+
+            // Inject CSS if not present
+            if (!doc.getElementById('cc-auto-highlight-styles')) {
+                const style = doc.createElement('style');
+                style.id = 'cc-auto-highlight-styles';
+                style.textContent =
+                    '.cc-auto-highlight{background:rgba(59,130,246,0.15);' +
+                    'border-bottom:2px solid #3b82f6;border-radius:2px}';
+                (doc.head || doc.documentElement).appendChild(style);
+            }
+
+            // Remove all existing auto-highlights (clean slate)
+            doc.querySelectorAll('mark.cc-auto-highlight').forEach(m => {
+                const parent = m.parentNode;
+                parent.replaceChild(doc.createTextNode(m.textContent), m);
+                parent.normalize();
+            });
+
+            // Highlight checked items
+            this.replacements.forEach(item => {
+                if (item.checked && item.text && item.text.trim()) {
+                    this._highlightTextInDoc(doc, item.text.trim(), 'cc-auto-highlight', 'data-cc-auto');
+                }
+            });
+        },
+
+        _highlightTextInDoc(doc, searchText, cssClass, dataAttr) {
+            if (!doc || !doc.body) return;
+            const lower = searchText.toLowerCase();
+            const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null, false);
+            const nodes = [];
+            while (walker.nextNode()) {
+                const n = walker.currentNode;
+                if (n.parentNode.classList &&
+                    (n.parentNode.classList.contains('cc-auto-highlight') ||
+                     n.parentNode.classList.contains('cc-redact-highlight'))) continue;
+                if (n.nodeValue.toLowerCase().indexOf(lower) !== -1) nodes.push(n);
+            }
+            nodes.forEach(node => this._splitAndWrapNode(doc, node, searchText, cssClass, dataAttr));
+        },
+
+        _splitAndWrapNode(doc, textNode, searchText, cssClass, dataAttr) {
+            let text = textNode.nodeValue;
+            let lower = text.toLowerCase();
+            const search = searchText.toLowerCase();
+            let idx = lower.indexOf(search);
+            if (idx === -1) return;
+            const parent = textNode.parentNode;
+            const frag = doc.createDocumentFragment();
+            while (idx !== -1) {
+                if (idx > 0) frag.appendChild(doc.createTextNode(text.substring(0, idx)));
+                const mark = doc.createElement('mark');
+                mark.className = cssClass;
+                mark.setAttribute(dataAttr, searchText);
+                mark.textContent = text.substring(idx, idx + searchText.length);
+                frag.appendChild(mark);
+                text = text.substring(idx + searchText.length);
+                lower = text.toLowerCase();
+                idx = lower.indexOf(search);
+            }
+            if (text) frag.appendChild(doc.createTextNode(text));
+            parent.replaceChild(frag, textNode);
         },
     };
 }
