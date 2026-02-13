@@ -131,7 +131,7 @@ MIT
 
 ## Contact
 
-For questions, support, or feedback: [mailto:info@makingreign.com](./mailto:info@makingreign.com)
+For questions, support, or feedback: [info@makingreign.com](mailto:info@makingreign.com)
 
 ---
 
