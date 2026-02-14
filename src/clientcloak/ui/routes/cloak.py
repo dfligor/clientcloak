@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import shutil
 
 import structlog
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -68,18 +67,13 @@ async def upload_document(file: UploadFile = File(...)):
             while chunk := await file.read(1024 * 1024):  # 1 MB chunks
                 total_size += len(chunk)
                 if total_size > _MAX_UPLOAD_BYTES:
-                    # Clean up partial upload before rejecting
-                    shutil.rmtree(get_session_dir(session_id), ignore_errors=True)
                     raise HTTPException(
                         status_code=413,
                         detail="File too large. Maximum upload size is 100 MB.",
                     )
                 f.write(chunk)
         logger.info("File uploaded", session_id=session_id, filename=file.filename)
-    except HTTPException:
-        raise
     except Exception as exc:
-        shutil.rmtree(get_session_dir(session_id), ignore_errors=True)
         logger.error("Failed to save uploaded file", session_id=session_id, error=str(exc))
         raise HTTPException(status_code=500, detail="Failed to save uploaded file.") from exc
 

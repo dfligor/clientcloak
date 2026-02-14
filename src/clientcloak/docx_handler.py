@@ -98,21 +98,6 @@ def load_document(file_path: str | Path) -> Document:
             f"File is not a valid .docx archive (corrupt or not a real ZIP): {path.name}"
         )
 
-    # --- zip bomb check ---
-    _MAX_UNCOMPRESSED_BYTES = 500 * 1024 * 1024  # 500 MB
-    try:
-        with zipfile.ZipFile(path, "r") as zf:
-            total_uncompressed = sum(info.file_size for info in zf.infolist())
-        if total_uncompressed > _MAX_UNCOMPRESSED_BYTES:
-            raise UnsupportedFormatError(
-                f"Document uncompressed size ({total_uncompressed // (1024 * 1024)} MB) "
-                f"exceeds the 500 MB safety limit: {path.name}"
-            )
-    except zipfile.BadZipFile as exc:
-        raise UnsupportedFormatError(
-            f"File is not a valid .docx archive (corrupt ZIP): {path.name}"
-        ) from exc
-
     # --- encryption check ---
     if _is_encrypted(path):
         raise PasswordProtectedError(

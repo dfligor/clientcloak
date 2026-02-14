@@ -39,18 +39,6 @@ def sample_docx(tmp_path) -> Path:
     return path
 
 
-def _parse_upload_ndjson(resp):
-    """Parse an NDJSON upload response, returning the final 'complete' payload."""
-    lines = resp.text.strip().split("\n")
-    for line in reversed(lines):
-        event = json.loads(line)
-        if event.get("stage") == "complete":
-            return event["data"]
-        if event.get("stage") == "error":
-            raise AssertionError(f"Upload error: {event['message']}")
-    raise AssertionError("No 'complete' event in NDJSON response")
-
-
 # ---------------------------------------------------------------------------
 # Upload
 # ---------------------------------------------------------------------------
@@ -60,7 +48,7 @@ def test_upload_success(client, sample_docx):
     with open(sample_docx, "rb") as f:
         resp = client.post("/api/upload", files={"file": ("test.docx", f)})
     assert resp.status_code == 200
-    data = _parse_upload_ndjson(resp)
+    data = resp.json()
     assert "session_id" in data
     assert data["filename"] == "test.docx"
 
@@ -89,7 +77,7 @@ def test_cloak_success(client, sample_docx):
     # Upload first
     with open(sample_docx, "rb") as f:
         upload_resp = client.post("/api/upload", files={"file": ("test.docx", f)})
-    session_id = _parse_upload_ndjson(upload_resp)["session_id"]
+    session_id = upload_resp.json()["session_id"]
 
     # Cloak
     resp = client.post("/api/cloak", data={
@@ -120,7 +108,7 @@ def test_cloak_invalid_session(client):
 def test_cloak_invalid_comment_mode(client, sample_docx):
     with open(sample_docx, "rb") as f:
         upload_resp = client.post("/api/upload", files={"file": ("test.docx", f)})
-    session_id = _parse_upload_ndjson(upload_resp)["session_id"]
+    session_id = upload_resp.json()["session_id"]
 
     resp = client.post("/api/cloak", data={
         "session_id": session_id,
@@ -141,7 +129,7 @@ def test_download_cloaked(client, sample_docx):
     # Upload + cloak
     with open(sample_docx, "rb") as f:
         upload_resp = client.post("/api/upload", files={"file": ("test.docx", f)})
-    session_id = _parse_upload_ndjson(upload_resp)["session_id"]
+    session_id = upload_resp.json()["session_id"]
     client.post("/api/cloak", data={
         "session_id": session_id,
         "party_a": "Acme Corporation",
@@ -157,7 +145,7 @@ def test_download_cloaked(client, sample_docx):
 def test_download_mapping(client, sample_docx):
     with open(sample_docx, "rb") as f:
         upload_resp = client.post("/api/upload", files={"file": ("test.docx", f)})
-    session_id = _parse_upload_ndjson(upload_resp)["session_id"]
+    session_id = upload_resp.json()["session_id"]
     client.post("/api/cloak", data={
         "session_id": session_id,
         "party_a": "Acme Corporation",
@@ -173,7 +161,7 @@ def test_download_mapping(client, sample_docx):
 def test_download_invalid_file_type(client, sample_docx):
     with open(sample_docx, "rb") as f:
         upload_resp = client.post("/api/upload", files={"file": ("test.docx", f)})
-    session_id = _parse_upload_ndjson(upload_resp)["session_id"]
+    session_id = upload_resp.json()["session_id"]
 
     resp = client.get(f"/api/download/{session_id}/invalid")
     assert resp.status_code == 400
@@ -182,7 +170,7 @@ def test_download_invalid_file_type(client, sample_docx):
 def test_download_before_cloak(client, sample_docx):
     with open(sample_docx, "rb") as f:
         upload_resp = client.post("/api/upload", files={"file": ("test.docx", f)})
-    session_id = _parse_upload_ndjson(upload_resp)["session_id"]
+    session_id = upload_resp.json()["session_id"]
 
     resp = client.get(f"/api/download/{session_id}/cloaked")
     assert resp.status_code == 404
@@ -197,7 +185,7 @@ def test_uncloak_roundtrip(client, sample_docx):
     # Upload + cloak
     with open(sample_docx, "rb") as f:
         upload_resp = client.post("/api/upload", files={"file": ("test.docx", f)})
-    session_id = _parse_upload_ndjson(upload_resp)["session_id"]
+    session_id = upload_resp.json()["session_id"]
     cloak_resp = client.post("/api/cloak", data={
         "session_id": session_id,
         "party_a": "Acme Corporation",
