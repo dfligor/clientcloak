@@ -40,6 +40,9 @@ mapping_*.json
 # Don't commit test documents with real client data
 tests/fixtures/real_*.docx
 
+# Word temp files
+~$*.docx
+
 # Internal planning docs (keep local, not in public repo)
 docs/
 Scratchpad.md
