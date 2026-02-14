@@ -33,21 +33,12 @@ htmlcov/
 # PyInstaller
 *.spec
 
-# CRITICAL: Mapping / decoder key files contain real client names — never commit
+# CRITICAL: Mapping files contain real client names — never commit
 *_mapping.json
 mapping_*.json
-*Secret_Decoder_Ring*
 
 # Don't commit test documents with real client data
 tests/fixtures/real_*.docx
-
-# Node.js (Tailwind CSS build tooling only)
-node_modules/
-package-lock.json
-package.json
-
-# Tailwind CSS build input (output tailwind.css is committed)
-src/clientcloak/ui/static/tailwind-input.css
 
 # Internal planning docs (keep local, not in public repo)
 docs/

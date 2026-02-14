@@ -102,13 +102,7 @@ def get_session_file(session_id: str, filename: str) -> Path:
     """
     if not _SAFE_FILENAME_RE.match(filename):
         raise ValueError(f"Invalid session filename: {filename}")
-    if ".." in filename:
-        raise ValueError(f"Invalid session filename: {filename}")
-    session_dir = get_session_dir(session_id)
-    file_path = (session_dir / filename).resolve()
-    if not str(file_path).startswith(str(session_dir.resolve()) + "/"):
-        raise ValueError(f"Invalid session filename: {filename}")
-    return session_dir / filename
+    return get_session_dir(session_id) / filename
 
 
 def cleanup_expired_sessions() -> int:
