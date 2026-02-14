@@ -1261,6 +1261,19 @@ class TestFalsePositiveRegressions:
         assert _filter_gliner_entity("FINRA", "COMPANY") is None
         assert _filter_gliner_entity("Securities and Exchange Commission (SEC)", "COMPANY") is None
 
+    def test_gliner_filter_rejects_multiword_generic_role(self):
+        """Multi-word spans starting with a generic legal role should be rejected."""
+        assert _filter_gliner_entity("Company and its affiliates", "COMPANY") is None
+        assert _filter_gliner_entity("Company affiliates", "COMPANY") is None
+        assert _filter_gliner_entity("Contractor and its subcontractors", "COMPANY") is None
+        assert _filter_gliner_entity("Vendor or its agents", "COMPANY") is None
+        # Single-word generic roles still rejected.
+        assert _filter_gliner_entity("Company", "COMPANY") is None
+        assert _filter_gliner_entity("Contractor", "COMPANY") is None
+        # Real company names still pass.
+        assert _filter_gliner_entity("Acme Corp", "COMPANY") == "Acme Corp"
+        assert _filter_gliner_entity("Goldman Sachs", "COMPANY") == "Goldman Sachs"
+
     def test_finra_full_name_not_company(self):
         """Full name with embedded legal abbreviation should be rejected."""
         result = _filter_gliner_entity(

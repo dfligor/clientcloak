@@ -282,8 +282,11 @@ def _filter_gliner_entity(text: str, entity_type: str) -> str | None:
             return None
         stripped = cleaned
 
-        # Reject single-word generic legal roles (Company, Contractor, etc.).
-        if " " not in stripped and stripped.lower() in _GENERIC_LEGAL_ROLES:
+        # Reject generic legal roles (Company, Contractor, etc.).
+        # Single-word: "Company" → reject.
+        # Multi-word starting with a generic role: "Company and its affiliates" → reject.
+        first_word = stripped.split(None, 1)[0].lower()
+        if first_word in _GENERIC_LEGAL_ROLES:
             return None
 
         # Reject institutional/regulatory organizations.
