@@ -683,7 +683,7 @@
                 <button class="btn-secondary"
                         @click="cloakStep = 2"
                         type="button">
-                    Adjust &amp; Re-Cloak
+                    Back
                 </button>
                 <button class="btn-secondary"
                         @click="resetCloak()"
@@ -845,12 +845,19 @@
                 </button>
             </div>
 
-            <button class="btn-secondary"
-                    @click="resetAll(); switchMode('cloak')"
-                    type="button">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h1M15 13h1M8 17h1M15 17h1"/></svg>
-                Cloak Another
-            </button>
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button class="btn-secondary"
+                        @click="uncloakStep = 1; uncloakResult = null"
+                        type="button">
+                    Back
+                </button>
+                <button class="btn-secondary"
+                        @click="resetAll(); switchMode('cloak')"
+                        type="button">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h1M15 13h1M8 17h1M15 17h1"/></svg>
+                    Cloak Another
+                </button>
+            </div>
         </div>
 
     </div><!-- /uncloak-panel -->
