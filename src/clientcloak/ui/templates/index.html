@@ -3,7 +3,8 @@
 {% block content %}
 <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
      x-data="clientCloak()"
-     x-init="init()">
+     x-init="init()"
+     x-cloak>
 
     <!-- ============================================================
          Mode Toggle
@@ -254,15 +255,15 @@
                 </div>
             </template>
 
-            <!-- View and Redact (collapsible) -->
+            <!-- View Document (collapsible) -->
             <div class="mb-5">
-                <h3 class="text-lg font-bold text-navy flex items-center gap-2 cursor-pointer select-none"
+                <h3 id="cc-view-heading" class="text-lg font-bold text-navy flex items-center gap-2 cursor-pointer select-none"
                     @click="toggleDocPreview()"
                     :aria-expanded="docPreviewOpen">
                     <svg class="w-4 h-4 transition-transform duration-200" :class="docPreviewOpen ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
-                    View and Redact
+                    View
                 </h3>
-                <p id="cc-view-redact-desc" class="text-sm text-gray-500 mt-1 mb-3">Automatically detected items are highlighted in blue.</p>
+                <p id="cc-view-redact-desc" class="text-sm text-gray-500 mt-1 mb-3">Preview your document with detected items highlighted.</p>
                 <div x-show="docPreviewOpen"
                      x-transition:enter="transition ease-out duration-200"
                      x-transition:enter-start="opacity-0 -translate-y-2"

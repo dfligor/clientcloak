@@ -3,6 +3,10 @@
    Supplements Tailwind CSS with component-specific styling
    ============================================================ */
 
+/* Hide Alpine-managed elements until the framework initializes,
+   preventing a flash of all steps visible at once (FOUC). */
+[x-cloak] { display: none !important; }
+
 /* ---- Drop Zone ---- */
 
 .drop-zone {
